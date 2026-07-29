@@ -1,4 +1,6 @@
-plugins { id 'com.android.application' }
+plugins {
+    id 'com.android.application'
+}
 
 android {
     namespace 'pl.zabka.wyczysctms'
@@ -11,8 +13,13 @@ android {
         versionCode 20
         versionName '2.0'
     }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
 }
 
 dependencies {
-    implementation 'androidx.core:core:1.13.1'
+    implementation 'androidx.core:core:1.12.0'
 }
