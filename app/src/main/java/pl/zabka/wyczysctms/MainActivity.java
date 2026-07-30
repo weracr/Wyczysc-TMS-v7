@@ -42,6 +42,8 @@ public class MainActivity extends Activity {
     private String pendingInstallPackage = DEFAULT_TMS_PACKAGE;
     private long pendingInstallVersionCode = -1;
 
+    private boolean repairAfterUninstall = false;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -55,6 +57,21 @@ public class MainActivity extends Activity {
 
         if (statusBox != null) {
             refreshStatus();
+        }
+
+        if (repairAfterUninstall) {
+            if (!isInstalled(detectedTmsPackage)) {
+                repairAfterUninstall = false;
+
+                Toast.makeText(
+                        this,
+                        "TMS odinstalowany. Uruchamiam instalację najnowszej wersji.",
+                        Toast.LENGTH_LONG
+                ).show();
+
+                installNewestTmsFromDownload();
+                return;
+            }
         }
 
         if (waitingForInstallResult) {
@@ -231,8 +248,8 @@ public class MainActivity extends Activity {
     private void showRepairDialog() {
         new AlertDialog.Builder(this)
                 .setTitle("Naprawa TMS")
-                .setMessage("Aplikacja może odinstalować TMS. Instalacja najnowszej wersji z folderu Download jest dostępna w panelu administratora.")
-                .setPositiveButton("Odinstaluj TMS", (d, w) -> uninstallTms())
+                .setMessage("Aplikacja odinstaluje TMS, a następnie spróbuje zainstalować najnowszą wersję APK z folderu Download.")
+                .setPositiveButton("Napraw TMS", (d, w) -> repairTms())
                 .setNegativeButton("Anuluj", null)
                 .show();
     }
@@ -439,6 +456,43 @@ public class MainActivity extends Activity {
         }
     }
 
+    private void repairTms() {
+        File newestApk = findNewestTmsApkInDownload();
+
+        if (newestApk == null) {
+            Toast.makeText(
+                    this,
+                    "Nie znaleziono pliku TMS APK w folderze Download.",
+                    Toast.LENGTH_LONG
+            ).show();
+            return;
+        }
+
+        PackageInfo packageInfo = getPackageManager().getPackageArchiveInfo(
+                newestApk.getAbsolutePath(),
+                0
+        );
+
+        if (packageInfo != null && packageInfo.packageName != null) {
+            detectedTmsPackage = packageInfo.packageName;
+            pendingInstallPackage = packageInfo.packageName;
+        }
+
+        if (isInstalled(detectedTmsPackage)) {
+            repairAfterUninstall = true;
+
+            Toast.makeText(
+                    this,
+                    "Najpierw odinstaluj TMS. Po powrocie uruchomi się instalacja.",
+                    Toast.LENGTH_LONG
+            ).show();
+
+            uninstallTms();
+        } else {
+            installNewestTmsFromDownload();
+        }
+    }
+
     private void uninstallTms() {
         Intent intent = new Intent(Intent.ACTION_DELETE);
         intent.setData(Uri.parse("package:" + detectedTmsPackage));
@@ -503,72 +557,72 @@ public class MainActivity extends Activity {
         }
     }
 
-private File findNewestTmsApkInDownload() {
-    File downloadDir = Environment.getExternalStoragePublicDirectory(
-            Environment.DIRECTORY_DOWNLOADS
-    );
-
-    if (downloadDir == null || !downloadDir.exists()) {
-        return null;
-    }
-
-    File[] files = downloadDir.listFiles();
-
-    if (files == null || files.length == 0) {
-        return null;
-    }
-
-    File newestFile = null;
-    long newestVersionCode = -1;
-
-    for (File file : files) {
-        if (file == null || !file.isFile()) {
-            continue;
-        }
-
-        String fileName = file.getName().toLowerCase();
-
-        if (!fileName.endsWith(".apk")) {
-            continue;
-        }
-
-        if (
-                !fileName.contains("tms") &&
-                !fileName.contains("zabka") &&
-                !fileName.contains("falcon")
-        ) {
-            continue;
-        }
-
-        PackageInfo packageInfo = getPackageManager().getPackageArchiveInfo(
-                file.getAbsolutePath(),
-                0
+    private File findNewestTmsApkInDownload() {
+        File downloadDir = Environment.getExternalStoragePublicDirectory(
+                Environment.DIRECTORY_DOWNLOADS
         );
 
-        if (packageInfo == null) {
-            continue;
+        if (downloadDir == null || !downloadDir.exists()) {
+            return null;
         }
 
-        long versionCode;
+        File[] files = downloadDir.listFiles();
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            versionCode = packageInfo.getLongVersionCode();
-        } else {
-            versionCode = packageInfo.versionCode;
+        if (files == null || files.length == 0) {
+            return null;
         }
 
-        if (versionCode > newestVersionCode) {
-            newestVersionCode = versionCode;
-            newestFile = file;
+        File newestFile = null;
+        long newestVersionCode = -1;
 
-            if (packageInfo.packageName != null) {
-                detectedTmsPackage = packageInfo.packageName;
+        for (File file : files) {
+            if (file == null || !file.isFile()) {
+                continue;
+            }
+
+            String fileName = file.getName().toLowerCase();
+
+            if (!fileName.endsWith(".apk")) {
+                continue;
+            }
+
+            if (
+                    !fileName.contains("tms") &&
+                    !fileName.contains("zabka") &&
+                    !fileName.contains("falcon")
+            ) {
+                continue;
+            }
+
+            PackageInfo packageInfo = getPackageManager().getPackageArchiveInfo(
+                    file.getAbsolutePath(),
+                    0
+            );
+
+            if (packageInfo == null) {
+                continue;
+            }
+
+            long versionCode;
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                versionCode = packageInfo.getLongVersionCode();
+            } else {
+                versionCode = packageInfo.versionCode;
+            }
+
+            if (versionCode > newestVersionCode) {
+                newestVersionCode = versionCode;
+                newestFile = file;
+
+                if (packageInfo.packageName != null) {
+                    detectedTmsPackage = packageInfo.packageName;
+                }
             }
         }
-    }
 
-    return newestFile;
-}
+        return newestFile;
+    }
 
     private void openTms() {
         Intent launchIntent = getPackageManager().getLaunchIntentForPackage(detectedTmsPackage);
