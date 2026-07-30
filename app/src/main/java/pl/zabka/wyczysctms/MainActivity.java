@@ -53,9 +53,14 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
 
+        if (statusBox != null) {
+            refreshStatus();
+        }
+
         if (waitingForInstallResult) {
             if (isInstalledVersionAtLeast(pendingInstallPackage, pendingInstallVersionCode)) {
                 waitingForInstallResult = false;
+
                 Toast.makeText(
                         this,
                         "Sukces, aplikacja zainstalowana.",
@@ -160,6 +165,13 @@ public class MainActivity extends Activity {
         );
 
         addAdminButton(root, "Aktywuj administratora urządzenia", v -> activateAdmin());
+
+        addAdminButton(
+                root,
+                "Nadaj dostęp do wszystkich plików",
+                v -> requestAllFilesAccess()
+        );
+
         addAdminButton(root, "1. Odinstaluj TMS", v -> uninstallTms());
         addAdminButton(root, "2. Zainstaluj najnowszy TMS z Download", v -> installNewestTmsFromDownload());
         addAdminButton(root, "3. Otwórz TMS", v -> openTms());
@@ -189,6 +201,12 @@ public class MainActivity extends Activity {
                 "Usługa pomocnicza",
                 isAccessibilityEnabled() ? "OK" : "BRAK",
                 isAccessibilityEnabled()
+        );
+
+        addStatusLine(
+                "Dostęp do plików",
+                hasAllFilesAccess() ? "OK" : "BRAK",
+                hasAllFilesAccess()
         );
 
         addStatusLine(
@@ -347,6 +365,14 @@ public class MainActivity extends Activity {
         return enabled.toLowerCase().contains(getPackageName().toLowerCase());
     }
 
+    private boolean hasAllFilesAccess() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            return Environment.isExternalStorageManager();
+        }
+
+        return true;
+    }
+
     private boolean isInstalled(String pkg) {
         try {
             getPackageManager().getPackageInfo(pkg, 0);
@@ -390,6 +416,27 @@ public class MainActivity extends Activity {
         );
 
         startActivity(intent);
+    }
+
+    private void requestAllFilesAccess() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            if (!Environment.isExternalStorageManager()) {
+                Intent intent = new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION);
+                startActivity(intent);
+            } else {
+                Toast.makeText(
+                        this,
+                        "Dostęp do wszystkich plików już nadany",
+                        Toast.LENGTH_LONG
+                ).show();
+            }
+        } else {
+            Toast.makeText(
+                    this,
+                    "Na tej wersji Androida dodatkowy dostęp nie jest wymagany",
+                    Toast.LENGTH_LONG
+            ).show();
+        }
     }
 
     private void uninstallTms() {
@@ -457,7 +504,9 @@ public class MainActivity extends Activity {
     }
 
     private File findNewestTmsApkInDownload() {
-        File downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+        File downloadDir = Environment.getExternalStoragePublicDirectory(
+                Environment.DIRECTORY_DOWNLOADS
+        );
 
         if (downloadDir == null || !downloadDir.exists()) {
             return null;
@@ -488,7 +537,7 @@ public class MainActivity extends Activity {
                     0
             );
 
-            if (packageInfo == null || packageInfo.packageName == null) {
+            if (packageInfo == null) {
                 continue;
             }
 
@@ -503,7 +552,10 @@ public class MainActivity extends Activity {
             if (versionCode > newestVersionCode) {
                 newestVersionCode = versionCode;
                 newestFile = file;
-                detectedTmsPackage = packageInfo.packageName;
+
+                if (packageInfo.packageName != null) {
+                    detectedTmsPackage = packageInfo.packageName;
+                }
             }
         }
 
@@ -529,29 +581,6 @@ public class MainActivity extends Activity {
         intent.setData(Uri.parse("package:" + detectedTmsPackage));
         startActivity(intent);
     }
-    
-    private void requestAllFilesAccess() {
-
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-
-        if (!Environment.isExternalStorageManager()) {
-
-            Intent intent = new Intent(
-                    Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION
-            );
-
-            startActivity(intent);
-
-        } else {
-
-            Toast.makeText(
-                    this,
-                    "Dostęp do wszystkich plików już nadany",
-                    Toast.LENGTH_LONG
-            ).show();
-        }
-    }
-}
 
     private int dp(int v) {
         return (int) (v * getResources().getDisplayMetrics().density + 0.5f);
