@@ -529,6 +529,29 @@ public class MainActivity extends Activity {
         intent.setData(Uri.parse("package:" + detectedTmsPackage));
         startActivity(intent);
     }
+    
+    private void requestAllFilesAccess() {
+
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+
+        if (!Environment.isExternalStorageManager()) {
+
+            Intent intent = new Intent(
+                    Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION
+            );
+
+            startActivity(intent);
+
+        } else {
+
+            Toast.makeText(
+                    this,
+                    "Dostęp do wszystkich plików już nadany",
+                    Toast.LENGTH_LONG
+            ).show();
+        }
+    }
+}
 
     private int dp(int v) {
         return (int) (v * getResources().getDisplayMetrics().density + 0.5f);
