@@ -503,64 +503,72 @@ public class MainActivity extends Activity {
         }
     }
 
-    private File findNewestTmsApkInDownload() {
-        File downloadDir = Environment.getExternalStoragePublicDirectory(
-                Environment.DIRECTORY_DOWNLOADS
+private File findNewestTmsApkInDownload() {
+    File downloadDir = Environment.getExternalStoragePublicDirectory(
+            Environment.DIRECTORY_DOWNLOADS
+    );
+
+    if (downloadDir == null || !downloadDir.exists()) {
+        return null;
+    }
+
+    File[] files = downloadDir.listFiles();
+
+    if (files == null || files.length == 0) {
+        return null;
+    }
+
+    File newestFile = null;
+    long newestVersionCode = -1;
+
+    for (File file : files) {
+        if (file == null || !file.isFile()) {
+            continue;
+        }
+
+        String fileName = file.getName().toLowerCase();
+
+        if (!fileName.endsWith(".apk")) {
+            continue;
+        }
+
+        if (
+                !fileName.contains("tms") &&
+                !fileName.contains("zabka") &&
+                !fileName.contains("falcon")
+        ) {
+            continue;
+        }
+
+        PackageInfo packageInfo = getPackageManager().getPackageArchiveInfo(
+                file.getAbsolutePath(),
+                0
         );
 
-        if (downloadDir == null || !downloadDir.exists()) {
-            return null;
+        if (packageInfo == null) {
+            continue;
         }
 
-        File[] files = downloadDir.listFiles();
+        long versionCode;
 
-        if (files == null || files.length == 0) {
-            return null;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            versionCode = packageInfo.getLongVersionCode();
+        } else {
+            versionCode = packageInfo.versionCode;
         }
 
-        File newestFile = null;
-        long newestVersionCode = -1;
+        if (versionCode > newestVersionCode) {
+            newestVersionCode = versionCode;
+            newestFile = file;
 
-        for (File file : files) {
-            if (file == null || !file.isFile()) {
-                continue;
-            }
-
-            String fileName = file.getName().toLowerCase();
-
-            if (!fileName.endsWith(".apk")) {
-                continue;
-            }
-
-            PackageInfo packageInfo = getPackageManager().getPackageArchiveInfo(
-                    file.getAbsolutePath(),
-                    0
-            );
-
-            if (packageInfo == null) {
-                continue;
-            }
-
-            long versionCode;
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                versionCode = packageInfo.getLongVersionCode();
-            } else {
-                versionCode = packageInfo.versionCode;
-            }
-
-            if (versionCode > newestVersionCode) {
-                newestVersionCode = versionCode;
-                newestFile = file;
-
-                if (packageInfo.packageName != null) {
-                    detectedTmsPackage = packageInfo.packageName;
-                }
+            if (packageInfo.packageName != null) {
+                detectedTmsPackage = packageInfo.packageName;
             }
         }
-
-        return newestFile;
     }
+
+    return newestFile;
+}
 
     private void openTms() {
         Intent launchIntent = getPackageManager().getLaunchIntentForPackage(detectedTmsPackage);
