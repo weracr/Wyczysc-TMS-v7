@@ -492,10 +492,6 @@ public class MainActivity extends Activity {
                 continue;
             }
 
-            if (!packageInfo.packageName.equals(DEFAULT_TMS_PACKAGE)) {
-                continue;
-            }
-
             long versionCode;
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
