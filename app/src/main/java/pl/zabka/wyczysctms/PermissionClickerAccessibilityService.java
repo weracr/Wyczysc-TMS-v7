@@ -3,8 +3,10 @@ package pl.zabka.wyczysctms;
 import android.accessibilityservice.AccessibilityService;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
+import android.provider.Settings;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
 
@@ -21,6 +23,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
     private boolean locationSettingsFlowStarted = false;
     private boolean notificationSettingsFlowStarted = false;
     private boolean returnedFromSettings = false;
+    private boolean openedAppSettingsForMissingPermission = false;
 
     private final List<String> tmsPackages = Arrays.asList(
             "pl.optidata.tms_android_2017",
@@ -168,6 +171,11 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
             return;
         }
 
+        if (isTmsAppInfoScreen(packageName, screenText)) {
+            handleTmsAppInfoScreen(root, screenText);
+            return;
+        }
+
         if (isAppPermissionsListScreen(packageName, screenText)) {
             handleAppPermissionsList(root, screenText);
             return;
@@ -179,7 +187,11 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         }
 
         if (isTmsPermissionInfoScreen(screenText)) {
-            clickTmsPermissionInfoScreen(root, screenText);
+            if (clickTmsPermissionInfoScreen(root, screenText)) {
+                return;
+            }
+
+            openTmsAppSettingsFromMissingPermission(packageName, screenText);
             return;
         }
 
@@ -305,18 +317,20 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         return containsTms && containsPermissionProblem;
     }
 
-    private void clickTmsPermissionInfoScreen(AccessibilityNodeInfo root, String screenText) {
+    private boolean clickTmsPermissionInfoScreen(AccessibilityNodeInfo root, String screenText) {
         if (!canClickNow()) {
-            return;
+            return false;
         }
 
-        if (clickByText(root, "ZAKTUALIZUJ USTAWIENIA")
-                || clickByText(root, "Zaktualizuj ustawienia")
-                || clickByText(root, "AKTUALIZUJ USTAWIENIA")
-                || clickByText(root, "Aktualizuj ustawienia")
-                || clickByText(root, "Ustawienia")
-                || clickByText(root, "Settings")) {
+        boolean clicked =
+                clickByText(root, "ZAKTUALIZUJ USTAWIENIA")
+                        || clickByText(root, "Zaktualizuj ustawienia")
+                        || clickByText(root, "AKTUALIZUJ USTAWIENIA")
+                        || clickByText(root, "Aktualizuj ustawienia")
+                        || clickByText(root, "Ustawienia")
+                        || clickByText(root, "Settings");
 
+        if (clicked) {
             if (screenText.contains("powiadomienia") || screenText.contains("notifications")) {
                 notificationSettingsFlowStarted = true;
                 locationSettingsFlowStarted = false;
@@ -327,7 +341,76 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
 
             returnedFromSettings = false;
             markClicked();
+            return true;
         }
+
+        return false;
+    }
+
+    private void openTmsAppSettingsFromMissingPermission(String currentPackageName, String screenText) {
+        if (openedAppSettingsForMissingPermission) {
+            return;
+        }
+
+        boolean isTmsScreen =
+                screenText.contains("tms")
+                        || screenText.contains("tmsfalcon")
+                        || screenText.contains("zabka")
+                        || screenText.contains("falcon");
+
+        boolean hasPermissionError =
+                screenText.contains("cannot use this application without requested permission")
+                        || screenText.contains("requested permission")
+                        || screenText.contains("without requested permission")
+                        || screenText.contains("brak uprawnien")
+                        || screenText.contains("permission");
+
+        if (!isTmsScreen || !hasPermissionError) {
+            return;
+        }
+
+        String tmsPackage = resolveTmsPackage(currentPackageName);
+
+        if (tmsPackage == null) {
+            return;
+        }
+
+        openedAppSettingsForMissingPermission = true;
+        locationSettingsFlowStarted = true;
+        notificationSettingsFlowStarted = false;
+        returnedFromSettings = false;
+
+        try {
+            Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+            intent.setData(Uri.parse("package:" + tmsPackage));
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(intent);
+            markClicked();
+        } catch (Exception ignored) {
+        }
+    }
+
+    private String resolveTmsPackage(String currentPackageName) {
+        if (currentPackageName != null) {
+            String pkg = currentPackageName.toLowerCase();
+
+            if (pkg.contains("tms") || pkg.contains("falcon") || pkg.contains("zabka")) {
+                return currentPackageName;
+            }
+        }
+
+        PackageManager pm = getPackageManager();
+
+        for (String pkg : tmsPackages) {
+            try {
+                if (pm.getLaunchIntentForPackage(pkg) != null) {
+                    return pkg;
+                }
+            } catch (Exception ignored) {
+            }
+        }
+
+        return null;
     }
 
     private boolean isAndroidLocationSettingsScreen(String packageName, String screenText) {
@@ -374,8 +457,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
             return;
         }
 
-        boolean clicked =
-                clickAnyText(root, alwaysLocationButtons);
+        boolean clicked = clickAnyText(root, alwaysLocationButtons);
 
         if (clicked) {
             markClicked();
@@ -528,6 +610,48 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
                 || isTextOptionChecked(root, "Allow notifications");
     }
 
+    private boolean isTmsAppInfoScreen(String packageName, String screenText) {
+        boolean isSettingsPackage = packageName.contains("settings");
+
+        boolean containsTms =
+                screenText.contains("tms")
+                        || screenText.contains("tmsfalcon")
+                        || screenText.contains("zabka")
+                        || screenText.contains("falcon");
+
+        boolean containsAppInfo =
+                screenText.contains("o aplikacji")
+                        || screenText.contains("informacje o aplikacji")
+                        || screenText.contains("app info")
+                        || screenText.contains("uprawnienia")
+                        || screenText.contains("permissions")
+                        || screenText.contains("powiadomienia")
+                        || screenText.contains("notifications")
+                        || screenText.contains("pamiec")
+                        || screenText.contains("storage");
+
+        return isSettingsPackage && containsTms && containsAppInfo;
+    }
+
+    private void handleTmsAppInfoScreen(AccessibilityNodeInfo root, String screenText) {
+        if (!canClickNow()) {
+            return;
+        }
+
+        if (isBlockedAdminScreen(screenText)) {
+            return;
+        }
+
+        boolean clicked =
+                clickByText(root, "Uprawnienia")
+                        || clickByText(root, "Permissions")
+                        || clickByText(root, "Zezwolenia");
+
+        if (clicked) {
+            markClicked();
+        }
+    }
+
     private boolean isAppPermissionsListScreen(String packageName, String screenText) {
         boolean isSettingsPackage = packageName.contains("settings");
 
@@ -535,7 +659,9 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
                 screenText.contains("uprawnienia aplikacji")
                         || screenText.contains("app permissions")
                         || screenText.contains("maja dostep")
-                        || screenText.contains("nie maja dostepu");
+                        || screenText.contains("nie maja dostepu")
+                        || screenText.contains("allowed")
+                        || screenText.contains("not allowed");
 
         boolean containsTms =
                 screenText.contains("zabka")
@@ -555,8 +681,8 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
             return;
         }
 
-        if (screenText.contains("lokalizacja")) {
-            if (clickByText(root, "Lokalizacja")) {
+        if (screenText.contains("lokalizacja") || screenText.contains("location")) {
+            if (clickByText(root, "Lokalizacja") || clickByText(root, "Location")) {
                 locationSettingsFlowStarted = true;
                 notificationSettingsFlowStarted = false;
                 returnedFromSettings = false;
@@ -565,8 +691,8 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
             }
         }
 
-        if (screenText.contains("powiadomienia")) {
-            if (clickByText(root, "Powiadomienia")) {
+        if (screenText.contains("powiadomienia") || screenText.contains("notifications")) {
+            if (clickByText(root, "Powiadomienia") || clickByText(root, "Notifications")) {
                 notificationSettingsFlowStarted = true;
                 locationSettingsFlowStarted = false;
                 returnedFromSettings = false;
@@ -670,6 +796,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
             locationSettingsFlowStarted = false;
             notificationSettingsFlowStarted = false;
             returnedFromSettings = false;
+            openedAppSettingsForMissingPermission = false;
         }, 2500);
     }
 
