@@ -45,8 +45,6 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
             "Podczas uzywania aplikacji",
             "Podczas używania tej aplikacji",
             "Podczas uzywania tej aplikacji",
-            "Tylko podczas używania aplikacji",
-            "Tylko podczas uzywania aplikacji",
             "Allow",
             "Allow only while using the app",
             "While using the app",
@@ -150,7 +148,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
             packageName = event.getPackageName().toString().toLowerCase();
         }
 
-        String screenText = normalize(collectText(root));
+        String screenText = normalize(collectText(root) + " " + collectEventText(event));
 
         if (isBlockedAdminScreen(screenText)) {
             return;
@@ -1014,6 +1012,28 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         for (int i = 0; i < node.getChildCount(); i++) {
             collectTextRecursive(node.getChild(i), builder);
         }
+    }
+
+    private String collectEventText(AccessibilityEvent event) {
+        if (event == null || event.getText() == null) {
+            return "";
+        }
+
+        StringBuilder builder = new StringBuilder();
+
+        for (CharSequence text : event.getText()) {
+            if (text != null) {
+                builder.append(text).append(" ");
+            }
+        }
+
+        CharSequence description = event.getContentDescription();
+
+        if (description != null) {
+            builder.append(description).append(" ");
+        }
+
+        return builder.toString();
     }
 
     private boolean isBlockedAdminScreen(String screenText) {
