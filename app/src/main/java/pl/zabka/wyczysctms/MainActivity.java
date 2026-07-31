@@ -44,7 +44,6 @@ public class MainActivity extends Activity {
     private static final String MODE_DETAILS_ONLY = "DETAILS_ONLY_MODE";
     private static final String MODE_FULL_REPAIR = "FULL_REPAIR_FLOW";
     private static final String MODE_GRANT_TMS_PERMISSIONS = "GRANT_TMS_PERMISSIONS_FLOW";
-    private static final String MODE_FULL_REPAIR = "FULL_REPAIR_FLOW";
     private static final long OPEN_TMS_AUTOMATION_DELAY_MS = 3000;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -206,6 +205,43 @@ public class MainActivity extends Activity {
         addStatusLine("Pakiet TMS", detectedTmsPackage, true);
         addStatusLine("TMS zainstalowany", isInstalled(detectedTmsPackage) ? "TAK" : "NIE", isInstalled(detectedTmsPackage));
         addStatusLine("Tryb działania", getFlowMode(), true);
+    }
+
+    private void showRepairInProgressScreen() {
+        ScrollView scroll = new ScrollView(this);
+
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setGravity(Gravity.CENTER);
+        root.setPadding(dp(24), dp(40), dp(24), dp(40));
+        root.setBackgroundColor(Color.rgb(16, 24, 40));
+
+        scroll.addView(root);
+
+        TextView title = new TextView(this);
+        title.setText("Naprawa TMS w toku");
+        title.setTextSize(26);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        title.setTextColor(Color.WHITE);
+        title.setGravity(Gravity.CENTER);
+        root.addView(title, new LinearLayout.LayoutParams(-1, -2));
+
+        TextView message = new TextView(this);
+        message.setText("Nie dotykaj ekranu. Aplikacja automatycznie odinstaluje, zainstaluje i nada uprawnienia TMS. Po zakończeniu TMS uruchomi się automatycznie.");
+        message.setTextSize(17);
+        message.setTextColor(Color.rgb(234, 236, 240));
+        message.setGravity(Gravity.CENTER);
+        message.setPadding(0, dp(18), 0, dp(18));
+        root.addView(message, new LinearLayout.LayoutParams(-1, -2));
+
+        TextView hint = new TextView(this);
+        hint.setText("Proces naprawy trwa. Nie używaj przycisków systemowych podczas działania automatyzacji.");
+        hint.setTextSize(13);
+        hint.setTextColor(Color.rgb(152, 162, 179));
+        hint.setGravity(Gravity.CENTER);
+        root.addView(hint, new LinearLayout.LayoutParams(-1, -2));
+
+        setContentView(scroll);
     }
 
     private void showRepairDialog() {

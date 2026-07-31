@@ -38,7 +38,6 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
     private static final String MODE_DETAILS_ONLY = "DETAILS_ONLY_MODE";
     private static final String MODE_FULL_REPAIR = "FULL_REPAIR_FLOW";
     private static final String MODE_GRANT_TMS_PERMISSIONS = "GRANT_TMS_PERMISSIONS_FLOW";
-    private static final String MODE_FULL_REPAIR = "FULL_REPAIR_FLOW";
     private long lastClickTime = 0;
     private long lastBackTime = 0;
     private boolean openedAppSettingsForMissingPermission = false;
