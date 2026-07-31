@@ -2,13 +2,20 @@ package pl.zabka.wyczysctms;
 
 import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.GestureDescription;
+import android.graphics.Color;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Path;
 import android.graphics.Rect;
+import android.graphics.PixelFormat;
 import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
+import android.view.Gravity;
+import android.view.View;
+import android.view.WindowManager;
+import android.widget.FrameLayout;
+import android.widget.TextView;
 import android.provider.Settings;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
@@ -18,6 +25,8 @@ import java.util.List;
 
 public class PermissionClickerAccessibilityService extends AccessibilityService {
     private final Handler handler = new Handler(Looper.getMainLooper());
+    private WindowManager overlayWindowManager;
+    private View automationOverlayView;
     private static final long CLICK_DELAY_MS = 1100;
     private static final String PREFS_NAME = "wyczysctms_prefs";
     private static final String KEY_FLOW_MODE = "flow_mode";
@@ -86,7 +95,9 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
     }
 
     private void handleScreen(AccessibilityEvent event) {
-        AccessibilityNodeInfo root = getRootInActiveWindow();
+        
+        updateOverlayVisibility();
+AccessibilityNodeInfo root = getRootInActiveWindow();
         if (root == null) return;
 
         String packageName = event.getPackageName() == null ? "" : event.getPackageName().toString().toLowerCase();
@@ -94,6 +105,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
 
         if (isOwnAppOrAdminPanel(packageName, screenText)) {
             setFlowMode(MODE_IDLE);
+                hideAutomationOverlay();
             return;
         }
 
@@ -250,12 +262,17 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
     }
 
     private boolean isTmsAppInfoScreen(String packageName, String screenText) {
-        return packageName.contains("settings") && containsTmsText(screenText) && (screenText.contains("o aplikacji") || screenText.contains("informacje o aplikacji") || screenText.contains("app info") || screenText.contains("uprawnienia") || screenText.contains("permissions"));
+        return packageName.contains("settings") && containsTmsText(screenText) && (screenText.contains("o aplikacji") || screenText.contains("informacje o aplikacji") || screenText.contains("app info") || screenText.contains("informacje o aplikacji") || screenText.contains("brak przyznanych uprawnien") || screenText.contains("uprawnienia") || screenText.contains("permissions"));
     }
 
     private void clickAppInfoPermissions(AccessibilityNodeInfo root) {
         if (!canClickNow()) return;
-        if (clickByText(root, "Uprawnienia") || clickByText(root, "Permissions") || clickByText(root, "Zezwolenia")) markClicked();
+
+        if (tapTextCenter(root, "Uprawnienia")
+                || tapTextCenter(root, "Permissions")
+                || tapTextCenter(root, "Zezwolenia")) {
+            markClicked();
+        }
     }
 
     private boolean isAppPermissionsListScreen(String packageName, String screenText) {
@@ -347,6 +364,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         openTmsApp();
         handler.postDelayed(() -> {
             if (isMode(MODE_GRANT_TMS_PERMISSIONS) || isMode(MODE_OPEN_TMS)) setFlowMode(MODE_IDLE);
+                hideAutomationOverlay();
         }, 2500);
     }
 
@@ -371,6 +389,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         handler.postDelayed(() -> {
             openedAppSettingsForMissingPermission = false;
             if (isMode(MODE_OPEN_TMS) || isMode(MODE_GRANT_TMS_PERMISSIONS)) setFlowMode(MODE_IDLE);
+                hideAutomationOverlay();
         }, 3000);
     }
 
@@ -417,6 +436,30 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         if (deniedIndex < 0) return false;
         int permissionIndex = text.indexOf(permission, deniedIndex);
         return permissionIndex > deniedIndex;
+    }
+
+    private boolean tapTextCenter(AccessibilityNodeInfo root, String text) {
+        if (root == null || text == null) return false;
+
+        List<AccessibilityNodeInfo> nodes = root.findAccessibilityNodeInfosByText(text);
+        if (nodes == null || nodes.isEmpty()) return false;
+
+        String wanted = normalize(text);
+
+        for (AccessibilityNodeInfo node : nodes) {
+            if (node == null) continue;
+
+            String nodeText = normalize(getNodeVisibleText(node));
+            if (!nodeText.equals(wanted) && !nodeText.contains(wanted)) continue;
+
+            Rect rect = new Rect();
+            node.getBoundsInScreen(rect);
+            if (rect.isEmpty()) continue;
+
+            return tapAt(rect.centerX(), rect.centerY());
+        }
+
+        return false;
     }
 
     private boolean tapPermissionRowByText(AccessibilityNodeInfo root, String text) {
@@ -598,6 +641,70 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
     private boolean isBlockedAdminScreen(String text) { String value = normalize(text); return value.contains("administratorzy urzadzenia") || value.contains("aplikacje administratora urzadzenia") || value.contains("administrator urzadzenia") || value.contains("device admin") || value.contains("device administrator") || value.contains("admin apps") || value.contains("aktywuj tego administratora") || value.contains("aktywowac tego administratora") || value.contains("dezaktywuj tego administratora") || value.contains("deactivate this device admin"); }
     private boolean isDangerousText(String text) { String value = normalize(text); return value.contains("odinstaluj") || value.contains("uninstall") || value.contains("usun") || value.contains("delete") || value.contains("wyczysc dane") || value.contains("clear data") || value.contains("wyczysc miejsce") || value.contains("clear storage") || value.contains("resetuj") || value.contains("dezaktywuj") || value.contains("deactivate"); }
     private boolean containsTmsText(String text) { String value = normalize(text); return value.contains("zabka") || value.contains("tms") || value.contains("tmsfalcon") || value.contains("falcon"); }
+    private void updateOverlayVisibility() {
+        String mode = getFlowMode();
+
+        if (MODE_IDLE.equals(mode) || MODE_DETAILS_ONLY.equals(mode)) {
+            hideAutomationOverlay();
+        } else {
+            showAutomationOverlay();
+        }
+    }
+
+    private void showAutomationOverlay() {
+        if (automationOverlayView != null) return;
+
+        try {
+            overlayWindowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
+            if (overlayWindowManager == null) return;
+
+            FrameLayout root = new FrameLayout(this);
+            root.setBackgroundColor(Color.argb(205, 0, 0, 0));
+            root.setClickable(false);
+            root.setFocusable(false);
+
+            TextView message = new TextView(this);
+            message.setText("Naprawa TMS w toku\nNie dotykaj ekranu\nAplikacja automatycznie nadaje uprawnienia");
+            message.setTextColor(Color.WHITE);
+            message.setTextSize(20);
+            message.setGravity(Gravity.CENTER);
+            message.setPadding(36, 36, 36, 36);
+
+            FrameLayout.LayoutParams msgParams = new FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.WRAP_CONTENT
+            );
+            msgParams.gravity = Gravity.CENTER;
+            root.addView(message, msgParams);
+
+            WindowManager.LayoutParams params = new WindowManager.LayoutParams(
+                    WindowManager.LayoutParams.MATCH_PARENT,
+                    WindowManager.LayoutParams.MATCH_PARENT,
+                    WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                            | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+                            | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                    PixelFormat.TRANSLUCENT
+            );
+            params.gravity = Gravity.CENTER;
+
+            overlayWindowManager.addView(root, params);
+            automationOverlayView = root;
+        } catch (Exception ignored) {
+            automationOverlayView = null;
+        }
+    }
+
+    private void hideAutomationOverlay() {
+        try {
+            if (overlayWindowManager != null && automationOverlayView != null) {
+                overlayWindowManager.removeView(automationOverlayView);
+            }
+        } catch (Exception ignored) {
+        }
+        automationOverlayView = null;
+    }
+
     private String getFlowMode() { return getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getString(KEY_FLOW_MODE, MODE_IDLE); }
     private void setFlowMode(String mode) { getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit().putString(KEY_FLOW_MODE, mode).apply(); }
     private boolean isMode(String expectedMode) { return expectedMode.equals(getFlowMode()); }
