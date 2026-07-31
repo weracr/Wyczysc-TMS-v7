@@ -20,7 +20,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
 
     private final Handler handler = new Handler(Looper.getMainLooper());
 
-    private static final long CLICK_DELAY_MS = 1800;
+    private static final long CLICK_DELAY_MS = 2500;
 
     private static final String PREFS_NAME = "wyczysctms_prefs";
     private static final String KEY_FLOW_MODE = "flow_mode";
@@ -107,9 +107,9 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
             return;
         }
 
-        handler.postDelayed(() -> handleScreen(event), 900);
-        handler.postDelayed(() -> handleScreen(event), 1900);
+        handler.postDelayed(() -> handleScreen(event), 1500);
         handler.postDelayed(() -> handleScreen(event), 3200);
+        handler.postDelayed(() -> handleScreen(event), 5200);
     }
 
     @Override
@@ -130,6 +130,11 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         }
 
         String screenText = normalize(collectText(root) + " " + collectEventText(event));
+
+        if (isAdminPanelText(screenText)) {
+            setFlowMode(MODE_IDLE);
+            return;
+        }
 
         if (isOwnAppScreen(packageName, screenText)) {
             return;
@@ -199,6 +204,26 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
 
             openTmsAppSettingsFromMissingPermission(packageName, screenText);
         }
+    }
+
+    private boolean isAdminPanelText(String screenText) {
+        if (screenText == null) {
+            return false;
+        }
+
+        String value = normalize(screenText);
+
+        return value.contains("panel administratora")
+                || value.contains("aktywuj administratora urzadzenia")
+                || value.contains("aktywuj administratora urządzenia")
+                || value.contains("nadaj dostep do wszystkich plikow")
+                || value.contains("nadaj dostęp do wszystkich plików")
+                || value.contains("nadaj zgode na instalowanie apk")
+                || value.contains("nadaj zgodę na instalowanie apk")
+                || value.contains("szczegoly tms w ustawieniach")
+                || value.contains("szczegóły tms w ustawieniach")
+                || value.contains("powrot do ekranu kierowcy")
+                || value.contains("powrót do ekranu kierowcy");
     }
 
     private boolean isOwnAppScreen(String packageName, String screenText) {
@@ -430,7 +455,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
 
         if (clicked) {
             markClicked();
-            handler.postDelayed(this::goBackAndOpenTms, 1400);
+            handler.postDelayed(this::goBackAndOpenTms, 2500);
         }
     }
 
@@ -460,7 +485,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         if (isAlwaysLocationAlreadyChecked(root)) {
             enablePreciseLocationIfVisible(root);
             markClicked();
-            handler.postDelayed(this::goBackAndOpenTms, 1400);
+            handler.postDelayed(this::goBackAndOpenTms, 2500);
             return;
         }
 
@@ -509,7 +534,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
 
         if (isNotificationAlreadyEnabled(root)) {
             markClicked();
-            handler.postDelayed(this::goBackAndOpenTms, 1400);
+            handler.postDelayed(this::goBackAndOpenTms, 2500);
             return;
         }
 
@@ -518,13 +543,13 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
                 || clickSwitchNearText(root, "Notifications")
                 || clickSwitchNearText(root, "Allow notifications")) {
             markClicked();
-            handler.postDelayed(this::goBackAndOpenTms, 1400);
+            handler.postDelayed(this::goBackAndOpenTms, 2500);
             return;
         }
 
         if (clickAnyText(root, allowButtons)) {
             markClicked();
-            handler.postDelayed(this::goBackAndOpenTms, 1400);
+            handler.postDelayed(this::goBackAndOpenTms, 2500);
         }
     }
 
@@ -755,7 +780,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         }
         returnedFromSettings = true;
         performGlobalAction(GLOBAL_ACTION_BACK);
-        handler.postDelayed(this::openTmsApp, 1100);
+        handler.postDelayed(this::openTmsApp, 2200);
     }
 
     private void openTmsApp() {
@@ -782,7 +807,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
             if (isMode(MODE_OPEN_TMS)) {
                 setFlowMode(MODE_IDLE);
             }
-        }, 3500);
+        }, 6000);
     }
 
     private boolean clickAnyText(AccessibilityNodeInfo root, List<String> texts) {
