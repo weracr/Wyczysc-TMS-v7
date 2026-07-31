@@ -43,7 +43,7 @@ public class MainActivity extends Activity {
     private static final String MODE_OPEN_TMS = "OPEN_TMS_FLOW";
     private static final String MODE_DETAILS_ONLY = "DETAILS_ONLY_MODE";
     private static final String MODE_GRANT_TMS_PERMISSIONS = "GRANT_TMS_PERMISSIONS_FLOW";
-    private static final long OPEN_TMS_AUTOMATION_DELAY_MS = 3500;
+    private static final long OPEN_TMS_AUTOMATION_DELAY_MS = 3000;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private String detectedTmsPackage = DEFAULT_TMS_PACKAGE;
@@ -53,6 +53,7 @@ public class MainActivity extends Activity {
     private String pendingInstallPackage = DEFAULT_TMS_PACKAGE;
     private long pendingInstallVersionCode = -1;
     private boolean repairAfterUninstall = false;
+    private boolean grantPermissionsAfterInstall = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -65,18 +66,27 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         if (statusBox != null) refreshStatus();
+
         if (repairAfterUninstall && !isInstalled(detectedTmsPackage)) {
             repairAfterUninstall = false;
+            grantPermissionsAfterInstall = true;
             Toast.makeText(this, "TMS odinstalowany. Uruchamiam instalację najnowszej wersji.", Toast.LENGTH_LONG).show();
             setFlowMode(MODE_REPAIR_TMS);
             installNewestTmsFromDownload();
             return;
         }
+
         if (waitingForInstallResult && isInstalledVersionAtLeast(pendingInstallPackage, pendingInstallVersionCode)) {
             waitingForInstallResult = false;
-            Toast.makeText(this, "Sukces, aplikacja zainstalowana.", Toast.LENGTH_LONG).show();
-            if (MODE_INSTALL_TMS.equals(getFlowMode())) clearFlowMode();
-            if (statusBox != null) refreshStatus();
+            detectedTmsPackage = pendingInstallPackage;
+            Toast.makeText(this, "TMS zainstalowany. Nadaję uprawnienia.", Toast.LENGTH_LONG).show();
+            if (grantPermissionsAfterInstall || MODE_REPAIR_TMS.equals(getFlowMode())) {
+                grantPermissionsAfterInstall = false;
+                handler.postDelayed(this::grantTmsPermissionsThenOpen, 1200);
+            } else if (MODE_INSTALL_TMS.equals(getFlowMode())) {
+                clearFlowMode();
+                if (statusBox != null) refreshStatus();
+            }
         }
     }
 
@@ -128,7 +138,7 @@ public class MainActivity extends Activity {
         root.addView(adminLink, new LinearLayout.LayoutParams(-1, -2));
 
         TextView version = new TextView(this);
-        version.setText("v2.2");
+        version.setText("v2.3");
         version.setTextColor(Color.rgb(152, 162, 179));
         version.setGravity(Gravity.CENTER);
         version.setTextSize(12);
@@ -197,8 +207,8 @@ public class MainActivity extends Activity {
     private void showRepairDialog() {
         new AlertDialog.Builder(this)
                 .setTitle("Naprawa TMS")
-                .setMessage("Aplikacja spróbuje odinstalować TMS, a następnie zainstalować najnowszą wersję APK z folderu Download.\n\nJeżeli TMS jest uruchomiony i kierowca jest zalogowany, odinstalowanie może się nie udać. Wtedy zamknij TMS z ostatnich aplikacji, przesuwając jego okno w górę, i uruchom naprawę ponownie.")
-                .setPositiveButton("Napraw TMS", (d, w) -> { setFlowMode(MODE_REPAIR_TMS); repairTms(); })
+                .setMessage("Aplikacja odinstaluje TMS, zainstaluje najnowszą wersję APK z Download, otworzy ustawienia TMS, nada brakujące uprawnienia i uruchomi TMS.\n\nJeżeli TMS jest uruchomiony i kierowca jest zalogowany, odinstalowanie może się nie udać. Wtedy zamknij TMS z ostatnich aplikacji i uruchom naprawę ponownie.")
+                .setPositiveButton("Napraw TMS", (d, w) -> { setFlowMode(MODE_REPAIR_TMS); grantPermissionsAfterInstall = true; repairTms(); })
                 .setNegativeButton("Anuluj", null)
                 .show();
     }
@@ -306,11 +316,12 @@ public class MainActivity extends Activity {
 
     private void repairTms() {
         setFlowMode(MODE_REPAIR_TMS);
+        grantPermissionsAfterInstall = true;
         File newestApk = findNewestTmsApkInDownload();
         if (newestApk == null) { Toast.makeText(this, "Nie znaleziono pliku TMS APK w folderze Download.", Toast.LENGTH_LONG).show(); return; }
         PackageInfo packageInfo = getPackageManager().getPackageArchiveInfo(newestApk.getAbsolutePath(), 0);
         if (packageInfo != null && packageInfo.packageName != null) { detectedTmsPackage = packageInfo.packageName; pendingInstallPackage = packageInfo.packageName; }
-        if (isInstalled(detectedTmsPackage)) { repairAfterUninstall = true; Toast.makeText(this, "Najpierw odinstaluj TMS. Po powrocie uruchomi się instalacja.", Toast.LENGTH_LONG).show(); uninstallTms(); }
+        if (isInstalled(detectedTmsPackage)) { repairAfterUninstall = true; Toast.makeText(this, "Odinstalowuję TMS. Po powrocie uruchomi się instalacja i nadanie uprawnień.", Toast.LENGTH_LONG).show(); uninstallTms(); }
         else installNewestTmsFromDownload();
     }
 
