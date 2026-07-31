@@ -158,6 +158,7 @@ root.addView(openTms);
     }
 
     private void buildAdminScreen() {
+        clearFlowMode();
         ScrollView scroll = new ScrollView(this);
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
