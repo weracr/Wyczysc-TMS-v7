@@ -14,6 +14,8 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
+import android.os.Handler;
+import android.os.Looper;
 import android.provider.Settings;
 import android.text.InputType;
 import android.view.Gravity;
@@ -53,6 +55,8 @@ public class MainActivity extends Activity {
     private long pendingInstallVersionCode = -1;
 
     private boolean repairAfterUninstall = false;
+    private final Handler handler = new Handler(Looper.getMainLooper());
+private static final long OPEN_TMS_AUTOMATION_DELAY_MS = 2500;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -131,12 +135,9 @@ public class MainActivity extends Activity {
         repair.setOnClickListener(v -> showRepairDialog());
         root.addView(repair);
 
-        Button openTms = secondaryButton("Otwórz TMS");
-        openTms.setOnClickListener(v -> {
-            setFlowMode(MODE_OPEN_TMS);
-            openTms();
-        });
-        root.addView(openTms);
+      Button openTms = secondaryButton("Otwórz TMS");
+openTms.setOnClickListener(v -> openTms());
+root.addView(openTms);
 
         TextView adminLink = new TextView(this);
         adminLink.setText("Panel administratora");
@@ -213,10 +214,7 @@ public class MainActivity extends Activity {
             installNewestTmsFromDownload();
         });
 
-        addAdminButton(root, "3. Otwórz TMS", v -> {
-            setFlowMode(MODE_OPEN_TMS);
-            openTms();
-        });
+ addAdminButton(root, "3. Otwórz TMS", v -> openTms());
 
         addAdminButton(root, "Szczegóły TMS w ustawieniach", v -> {
             setFlowMode(MODE_DETAILS_ONLY);
@@ -579,18 +577,29 @@ public class MainActivity extends Activity {
         return newestFile;
     }
 
-    private void openTms() {
-        if (MODE_IDLE.equals(getFlowMode()) || MODE_DETAILS_ONLY.equals(getFlowMode())) {
-            setFlowMode(MODE_OPEN_TMS);
-        }
-        Intent launchIntent = getPackageManager().getLaunchIntentForPackage(detectedTmsPackage);
-        if (launchIntent != null) {
-            startActivity(launchIntent);
-        } else {
-            Toast.makeText(this, "Nie znaleziono TMS: " + detectedTmsPackage, Toast.LENGTH_LONG).show();
-        }
-    }
+  private void openTms() {
+     clearFlowMode();
 
+    Intent launchIntent = getPackageManager().getLaunchIntentForPackage(detectedTmsPackage);
+
+    if (launchIntent != null) {
+        startActivity(launchIntent);
+
+        Toast.makeText(
+                this,
+                "Uruchamiam TMS. Automatyczne zgody włączą się po chwili.",
+                Toast.LENGTH_SHORT
+        ).show();
+
+        handler.postDelayed(() -> setFlowMode(MODE_OPEN_TMS), OPEN_TMS_AUTOMATION_DELAY_MS);
+    } else {
+        Toast.makeText(
+                this,
+                "Nie znaleziono TMS: " + detectedTmsPackage,
+                Toast.LENGTH_LONG
+        ).show();
+    }
+}
     private void openTmsSettings() {
         setFlowMode(MODE_DETAILS_ONLY);
         Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
