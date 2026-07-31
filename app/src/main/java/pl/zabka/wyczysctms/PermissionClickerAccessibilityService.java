@@ -80,7 +80,10 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
     );
 
     private final List<String> installerButtons = Arrays.asList(
-            "Zainstaluj", "Instaluj", "Aktualizuj", "Zaktualizuj", "Install", "Update", "Dalej", "Next", "Kontynuuj", "Continue", "Zainstaluj mimo to", "Install anyway", "Gotowe", "Done"
+            "Gotowe", "Done", "Otwórz", "Otworz", "Open",
+            "Zainstaluj", "Instaluj", "Aktualizuj", "Zaktualizuj",
+            "Install", "Update", "Dalej", "Next", "Kontynuuj", "Continue",
+            "Zainstaluj mimo to", "Install anyway", "OK", "Ok"
     );
 
     @Override
@@ -103,6 +106,18 @@ AccessibilityNodeInfo root = getRootInActiveWindow();
 
         String packageName = event.getPackageName() == null ? "" : event.getPackageName().toString().toLowerCase();
         String screenText = normalize(collectText(root) + " " + collectEventText(event));
+
+        // Priorytet: systemowe okna odinstalowania/instalacji obsługujemy zanim sprawdzimy własną aplikację,
+        // bo dialog instalatora może leżeć nad ekranem "Naprawa TMS w toku".
+        if (canHandleUninstall() && isUninstallConfirmationDialog(packageName, screenText)) {
+            clickUninstallConfirmation(root);
+            return;
+        }
+
+        if (canHandleInstall() && isInstallerScreen(packageName, screenText)) {
+            clickInstallerButtons(root);
+            return;
+        }
 
         if (isOwnAppOrAdminPanel(packageName, screenText)) {
             setFlowMode(MODE_IDLE);
@@ -200,13 +215,20 @@ AccessibilityNodeInfo root = getRootInActiveWindow();
     }
 
     private boolean isInstallerScreen(String packageName, String screenText) {
-        boolean installer = packageName.contains("packageinstaller")
+        boolean installerPackage = packageName.contains("packageinstaller")
                 || packageName.contains("permissioncontroller")
                 || packageName.contains("files")
                 || packageName.contains("documentsui")
                 || packageName.contains("package");
 
-        boolean hasText = screenText.contains("zainstaluj")
+        boolean installCompletion = screenText.contains("aplikacja zostala zainstalowana")
+                || screenText.contains("aplikacja została zainstalowana")
+                || screenText.contains("app installed")
+                || screenText.contains("application installed")
+                || screenText.contains("zostala zainstalowana")
+                || screenText.contains("została zainstalowana");
+
+        boolean installAction = screenText.contains("zainstaluj")
                 || screenText.contains("instaluj")
                 || screenText.contains("aktualizuj")
                 || screenText.contains("install")
@@ -215,18 +237,20 @@ AccessibilityNodeInfo root = getRootInActiveWindow();
                 || screenText.contains("next")
                 || screenText.contains("kontynuuj")
                 || screenText.contains("continue")
-                || screenText.contains("zainstaluj mimo to")
-                || screenText.contains("install anyway")
                 || screenText.contains("gotowe")
-                || screenText.contains("done");
+                || screenText.contains("done")
+                || screenText.contains("otworz")
+                || screenText.contains("otwórz")
+                || screenText.contains("open");
 
         boolean danger = screenText.contains("odinstaluj")
                 || screenText.contains("uninstall")
                 || screenText.contains("dezaktywuj")
                 || screenText.contains("clear data")
-                || screenText.contains("wyczysc dane");
+                || screenText.contains("wyczysc dane")
+                || screenText.contains("wyczyść dane");
 
-        return installer && hasText && !danger;
+        return (installerPackage || installCompletion) && installAction && !danger;
     }
 
     private void clickInstallerButtons(AccessibilityNodeInfo root) {
