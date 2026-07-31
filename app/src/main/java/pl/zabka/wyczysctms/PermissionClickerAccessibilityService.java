@@ -20,7 +20,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
 
     private final Handler handler = new Handler(Looper.getMainLooper());
 
-    private static final long CLICK_DELAY_MS = 2500;
+    private static final long CLICK_DELAY_MS = 1200;
 
     private static final String PREFS_NAME = "wyczysctms_prefs";
     private static final String KEY_FLOW_MODE = "flow_mode";
@@ -107,9 +107,9 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
             return;
         }
 
-        handler.postDelayed(() -> handleScreen(event), 1500);
-        handler.postDelayed(() -> handleScreen(event), 3200);
-        handler.postDelayed(() -> handleScreen(event), 5200);
+        handler.postDelayed(() -> handleScreen(event), 700);
+        handler.postDelayed(() -> handleScreen(event), 1600);
+        handler.postDelayed(() -> handleScreen(event), 2800);
     }
 
     @Override
@@ -240,13 +240,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
                 || screenText.contains("panel administratora")
                 || screenText.contains("napraw tms")
                 || screenText.contains("otworz tms")
-                || screenText.contains("otwórz tms")
-                || screenText.contains("powrot do ekranu kierowcy")
-                || screenText.contains("powrót do ekranu kierowcy")
-                || screenText.contains("nadaj zgode na instalowanie apk")
-                || screenText.contains("nadaj zgodę na instalowanie apk")
-                || screenText.contains("aktywuj administratora urzadzenia")
-                || screenText.contains("aktywuj administratora urządzenia"));
+                || screenText.contains("otwórz tms"));
 
         return packageIsOwnApp || textLooksLikeOwnApp;
     }
@@ -344,6 +338,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
                 || screenText.contains("location")
                 || screenText.contains("aparat")
                 || screenText.contains("camera")) {
+
             if (clickAnyText(root, runtimeLocationButtons)) {
                 markClicked();
                 return;
@@ -455,7 +450,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
 
         if (clicked) {
             markClicked();
-            handler.postDelayed(this::goBackAndOpenTms, 2500);
+            handler.postDelayed(this::goBackAndOpenTms, 1400);
         }
     }
 
@@ -485,7 +480,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         if (isAlwaysLocationAlreadyChecked(root)) {
             enablePreciseLocationIfVisible(root);
             markClicked();
-            handler.postDelayed(this::goBackAndOpenTms, 2500);
+            handler.postDelayed(this::goBackAndOpenTms, 1400);
             return;
         }
 
@@ -497,7 +492,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
                     enablePreciseLocationIfVisible(currentRoot);
                 }
             }, 900);
-            handler.postDelayed(this::goBackAndOpenTms, 1800);
+            handler.postDelayed(this::goBackAndOpenTms, 1400);
             return;
         }
 
@@ -534,7 +529,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
 
         if (isNotificationAlreadyEnabled(root)) {
             markClicked();
-            handler.postDelayed(this::goBackAndOpenTms, 2500);
+            handler.postDelayed(this::goBackAndOpenTms, 1400);
             return;
         }
 
@@ -543,13 +538,13 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
                 || clickSwitchNearText(root, "Notifications")
                 || clickSwitchNearText(root, "Allow notifications")) {
             markClicked();
-            handler.postDelayed(this::goBackAndOpenTms, 2500);
+            handler.postDelayed(this::goBackAndOpenTms, 1400);
             return;
         }
 
         if (clickAnyText(root, allowButtons)) {
             markClicked();
-            handler.postDelayed(this::goBackAndOpenTms, 2500);
+            handler.postDelayed(this::goBackAndOpenTms, 1400);
         }
     }
 
@@ -633,23 +628,19 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
             if (node == null) {
                 continue;
             }
-
             String nodeText = normalize(getNodeVisibleText(node));
             if (!nodeText.equals(wanted) && !nodeText.contains(wanted)) {
                 continue;
             }
-
             Rect textBounds = new Rect();
             node.getBoundsInScreen(textBounds);
             if (textBounds.isEmpty()) {
                 continue;
             }
-
             int tapX = textBounds.centerX();
             int tapY = textBounds.centerY();
             return tapAt(tapX, tapY);
         }
-
         return false;
     }
 
@@ -657,11 +648,10 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         if (x <= 0 || y <= 0) {
             return false;
         }
-
         try {
             Path path = new Path();
             path.moveTo(x, y);
-            GestureDescription.StrokeDescription stroke = new GestureDescription.StrokeDescription(path, 0, 120);
+            GestureDescription.StrokeDescription stroke = new GestureDescription.StrokeDescription(path, 0, 100);
             GestureDescription gesture = new GestureDescription.Builder().addStroke(stroke).build();
             return dispatchGesture(gesture, null, null);
         } catch (Exception ignored) {
@@ -673,7 +663,6 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         if (screenText == null || permissionName == null) {
             return false;
         }
-
         String text = normalize(screenText);
         String permission = normalize(permissionName);
         int deniedIndex = text.indexOf("nie maja dostepu");
@@ -692,7 +681,6 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
                 || packageName.contains("permissioncontroller")
                 || packageName.contains("files")
                 || packageName.contains("documentsui");
-
         boolean ok = screenText.contains("zainstaluj")
                 || screenText.contains("aktualizuj")
                 || screenText.contains("install")
@@ -701,14 +689,12 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
                 || screenText.contains("open")
                 || screenText.contains("gotowe")
                 || screenText.contains("done");
-
         boolean danger = screenText.contains("odinstaluj")
                 || screenText.contains("uninstall")
                 || screenText.contains("dezaktywuj")
                 || screenText.contains("deactivate")
                 || screenText.contains("wyczysc dane")
                 || screenText.contains("clear data");
-
         return installer && ok && !danger;
     }
 
@@ -725,12 +711,10 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         if (root == null || text == null) {
             return false;
         }
-
         List<AccessibilityNodeInfo> nodes = root.findAccessibilityNodeInfosByText(text);
         if (nodes == null || nodes.isEmpty()) {
             return false;
         }
-
         for (AccessibilityNodeInfo node : nodes) {
             AccessibilityNodeInfo current = node;
             for (int i = 0; i < 5 && current != null; i++) {
@@ -780,7 +764,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         }
         returnedFromSettings = true;
         performGlobalAction(GLOBAL_ACTION_BACK);
-        handler.postDelayed(this::openTmsApp, 2200);
+        handler.postDelayed(this::openTmsApp, 1200);
     }
 
     private void openTmsApp() {
@@ -807,7 +791,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
             if (isMode(MODE_OPEN_TMS)) {
                 setFlowMode(MODE_IDLE);
             }
-        }, 6000);
+        }, 3500);
     }
 
     private boolean clickAnyText(AccessibilityNodeInfo root, List<String> texts) {
@@ -826,12 +810,10 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         if (root == null || text == null) {
             return false;
         }
-
         List<AccessibilityNodeInfo> nodes = root.findAccessibilityNodeInfosByText(text);
         if (nodes == null || nodes.isEmpty()) {
             return false;
         }
-
         String wanted = normalize(text);
         for (AccessibilityNodeInfo node : nodes) {
             if (node == null) {
@@ -841,13 +823,11 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
             if (isDangerousText(nodeText)) {
                 continue;
             }
-
             boolean exact = nodeText.equals(wanted);
             boolean contains = wanted.length() >= 8 && nodeText.contains(wanted) && !isDangerousText(nodeText);
             if (!exact && !contains) {
                 continue;
             }
-
             AccessibilityNodeInfo clickableNode = findClickableParentSafe(node);
             if (clickableNode != null && clickableNode.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
                 return true;
