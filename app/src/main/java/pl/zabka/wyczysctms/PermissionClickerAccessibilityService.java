@@ -36,7 +36,9 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
     private static final String MODE_INSTALL_TMS = "INSTALL_TMS_FLOW";
     private static final String MODE_OPEN_TMS = "OPEN_TMS_FLOW";
     private static final String MODE_DETAILS_ONLY = "DETAILS_ONLY_MODE";
+    private static final String MODE_FULL_REPAIR = "FULL_REPAIR_FLOW";
     private static final String MODE_GRANT_TMS_PERMISSIONS = "GRANT_TMS_PERMISSIONS_FLOW";
+    private static final String MODE_FULL_REPAIR = "FULL_REPAIR_FLOW";
     private long lastClickTime = 0;
     private long lastBackTime = 0;
     private boolean openedAppSettingsForMissingPermission = false;
@@ -262,7 +264,7 @@ AccessibilityNodeInfo root = getRootInActiveWindow();
     }
 
     private boolean isTmsAppInfoScreen(String packageName, String screenText) {
-        return packageName.contains("settings") && containsTmsText(screenText) && (screenText.contains("o aplikacji") || screenText.contains("informacje o aplikacji") || screenText.contains("app info") || screenText.contains("informacje o aplikacji") || screenText.contains("brak przyznanych uprawnien") || screenText.contains("uprawnienia") || screenText.contains("permissions"));
+        return packageName.contains("settings") && containsTmsText(screenText) && (screenText.contains("o aplikacji") || screenText.contains("informacje o aplikacji") || screenText.contains("app info") || screenText.contains("informacje o aplikacji") || screenText.contains("brak przyznanych uprawnien") || screenText.contains("informacje o aplikacji") || screenText.contains("brak przyznanych uprawnien") || screenText.contains("uprawnienia") || screenText.contains("permissions"));
     }
 
     private void clickAppInfoPermissions(AccessibilityNodeInfo root) {
@@ -705,12 +707,21 @@ AccessibilityNodeInfo root = getRootInActiveWindow();
         automationOverlayView = null;
     }
 
+    private boolean isAutomationRunning() {
+        return isMode(MODE_FULL_REPAIR)
+                || isMode(MODE_REPAIR_TMS)
+                || isMode(MODE_UNINSTALL_TMS)
+                || isMode(MODE_INSTALL_TMS)
+                || isMode(MODE_GRANT_TMS_PERMISSIONS)
+                || isMode(MODE_OPEN_TMS);
+    }
+
     private String getFlowMode() { return getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getString(KEY_FLOW_MODE, MODE_IDLE); }
     private void setFlowMode(String mode) { getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit().putString(KEY_FLOW_MODE, mode).apply(); }
     private boolean isMode(String expectedMode) { return expectedMode.equals(getFlowMode()); }
-    private boolean canHandleUninstall() { return isMode(MODE_UNINSTALL_TMS) || isMode(MODE_REPAIR_TMS); }
-    private boolean canHandleInstall() { return isMode(MODE_INSTALL_TMS) || isMode(MODE_REPAIR_TMS); }
-    private boolean canHandleTmsPermissions() { return isMode(MODE_OPEN_TMS) || isMode(MODE_REPAIR_TMS) || isMode(MODE_GRANT_TMS_PERMISSIONS); }
+    private boolean canHandleUninstall() { return isMode(MODE_UNINSTALL_TMS) || isMode(MODE_REPAIR_TMS) || isMode(MODE_FULL_REPAIR); }
+    private boolean canHandleInstall() { return isMode(MODE_INSTALL_TMS) || isMode(MODE_REPAIR_TMS) || isMode(MODE_FULL_REPAIR); }
+    private boolean canHandleTmsPermissions() { return isMode(MODE_OPEN_TMS) || isMode(MODE_REPAIR_TMS) || isMode(MODE_GRANT_TMS_PERMISSIONS) || isMode(MODE_FULL_REPAIR); }
     private boolean isDetailsOnlyMode() { return isMode(MODE_DETAILS_ONLY); }
     private boolean isIdleMode() { return isMode(MODE_IDLE); }
     private String normalize(String text) { if (text == null) return ""; return text.toLowerCase().replace("ą", "a").replace("ć", "c").replace("ę", "e").replace("ł", "l").replace("ń", "n").replace("ó", "o").replace("ś", "s").replace("ż", "z").replace("ź", "z").trim(); }

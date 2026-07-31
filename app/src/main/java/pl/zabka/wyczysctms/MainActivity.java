@@ -42,7 +42,9 @@ public class MainActivity extends Activity {
     private static final String MODE_INSTALL_TMS = "INSTALL_TMS_FLOW";
     private static final String MODE_OPEN_TMS = "OPEN_TMS_FLOW";
     private static final String MODE_DETAILS_ONLY = "DETAILS_ONLY_MODE";
+    private static final String MODE_FULL_REPAIR = "FULL_REPAIR_FLOW";
     private static final String MODE_GRANT_TMS_PERMISSIONS = "GRANT_TMS_PERMISSIONS_FLOW";
+    private static final String MODE_FULL_REPAIR = "FULL_REPAIR_FLOW";
     private static final long OPEN_TMS_AUTOMATION_DELAY_MS = 3000;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -71,7 +73,9 @@ public class MainActivity extends Activity {
             repairAfterUninstall = false;
             grantPermissionsAfterInstall = true;
             Toast.makeText(this, "TMS odinstalowany. Uruchamiam instalację najnowszej wersji.", Toast.LENGTH_LONG).show();
-            setFlowMode(MODE_REPAIR_TMS);
+            setFlowMode(MODE_FULL_REPAIR);
+            grantPermissionsAfterInstall = true;
+            showRepairInProgressScreen();
             installNewestTmsFromDownload();
             return;
         }
@@ -315,7 +319,9 @@ public class MainActivity extends Activity {
     private void requestInstallUnknownAppsAccess() { try { if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) { Intent intent = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES); intent.setData(Uri.parse("package:" + getPackageName())); startActivity(intent); } else Toast.makeText(this, "Na tej wersji Androida osobna zgoda na instalację APK nie jest wymagana.", Toast.LENGTH_LONG).show(); } catch (Exception e) { Toast.makeText(this, "Nie można otworzyć ustawień instalowania APK: " + e.getMessage(), Toast.LENGTH_LONG).show(); } }
 
     private void repairTms() {
-        setFlowMode(MODE_REPAIR_TMS);
+        setFlowMode(MODE_FULL_REPAIR);
+        grantPermissionsAfterInstall = true;
+        showRepairInProgressScreen();
         grantPermissionsAfterInstall = true;
         File newestApk = findNewestTmsApkInDownload();
         if (newestApk == null) { Toast.makeText(this, "Nie znaleziono pliku TMS APK w folderze Download.", Toast.LENGTH_LONG).show(); return; }
@@ -325,10 +331,10 @@ public class MainActivity extends Activity {
         else installNewestTmsFromDownload();
     }
 
-    private void uninstallTms() { String mode = getFlowMode(); if (!MODE_REPAIR_TMS.equals(mode)) setFlowMode(MODE_UNINSTALL_TMS); Intent intent = new Intent(Intent.ACTION_DELETE); intent.setData(Uri.parse("package:" + detectedTmsPackage)); startActivity(intent); }
+    private void uninstallTms() { String mode = getFlowMode(); if (!MODE_REPAIR_TMS.equals(mode) && !MODE_FULL_REPAIR.equals(mode)) setFlowMode(MODE_UNINSTALL_TMS); Intent intent = new Intent(Intent.ACTION_DELETE); intent.setData(Uri.parse("package:" + detectedTmsPackage)); startActivity(intent); }
 
     private void installNewestTmsFromDownload() {
-        String mode = getFlowMode(); if (!MODE_REPAIR_TMS.equals(mode)) setFlowMode(MODE_INSTALL_TMS);
+        String mode = getFlowMode(); if (!MODE_REPAIR_TMS.equals(mode) && !MODE_FULL_REPAIR.equals(mode)) setFlowMode(MODE_INSTALL_TMS);
         try {
             File newestApk = findNewestTmsApkInDownload();
             if (newestApk == null) { Toast.makeText(this, "Nie znaleziono pliku TMS APK w folderze Download.", Toast.LENGTH_LONG).show(); return; }
