@@ -19,6 +19,7 @@ import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.widget.FrameLayout;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -49,6 +50,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
     private long lastForcedSettingsOpenTime = 0;
     private long lastAppInfoTapTime = 0;
     private boolean openedAppSettingsForMissingPermission = false;
+    private boolean finalToastShown = false;
 
     private final List<String> tmsPackages = Arrays.asList(
             "pl.optidata.tms_android_2017",
@@ -85,14 +87,13 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
 
     private final List<String> permissionRows = Arrays.asList(
             "Aparat", "Camera",
-            "Powiadomienia", "Notifications",
-            "Lokalizacja", "Location",
             "Kontakty", "Contacts",
+            "Lokalizacja", "Location",
+            "Muzyka i dźwięk", "Muzyka i dzwiek", "Music and audio",
+            "Powiadomienia", "Notifications",
             "Telefon", "Phone",
-            "Zdjęcia i filmy", "Zdjecia i filmy", "Photos and videos",
-            "Zdjęcia", "Zdjecia", "Photos",
             "Urządzenia w pobliżu", "Urzadzenia w poblizu", "Nearby devices",
-            "Muzyka i dźwięk", "Muzyka i dzwiek", "Music and audio"
+            "Zdjęcia i filmy", "Zdjecia i filmy", "Photos and videos", "Zdjęcia", "Zdjecia", "Photos"
     );
 
     @Override
@@ -387,6 +388,12 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
             }
             return tapAt(textRect.centerX(), textRect.centerY());
         }
+
+        Rect rootRect = new Rect();
+        root.getBoundsInScreen(rootRect);
+        if (!rootRect.isEmpty()) {
+            return tapAt(rootRect.centerX(), rootRect.top + (int) (rootRect.height() * 0.34f));
+        }
         return false;
     }
 
@@ -427,6 +434,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
 
     private void handlePermissionsList(AccessibilityNodeInfo root, String screenText) {
         if (!canClickNow()) return;
+
         for (String permission : permissionRows) {
             if (isPermissionInDeniedSection(screenText, permission)) {
                 if (tapPermissionRowByText(root, permission)) {
@@ -435,11 +443,8 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
                 }
             }
         }
-        long now = System.currentTimeMillis();
-        if (now - lastOpenTmsTime > 2500) {
-            lastOpenTmsTime = now;
-            handler.postDelayed(this::openTmsAppAndFinishPermissionFlow, 900);
-        }
+
+        finishPermissionFlowWithMessage();
     }
 
     private boolean isCameraPermissionScreen(String packageName, String screenText) {
@@ -450,7 +455,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
 
     private void handleCameraScreen(AccessibilityNodeInfo root) {
         if (!canClickNow()) return;
-        if (clickAnyText(root, whileUsingButtons) || clickAnyText(root, allowButtons)) {
+        if (clickAnyText(root, whileUsingButtons)) {
             markClicked();
             goBackToPermissionsListLater();
         }
@@ -470,7 +475,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
             goBackToPermissionsListLater();
             return;
         }
-        if (clickAnyText(root, alwaysLocationButtons) || clickAnyText(root, whileUsingButtons)) {
+        if (clickAnyText(root, alwaysLocationButtons)) {
             markClicked();
             handler.postDelayed(() -> {
                 AccessibilityNodeInfo r = getRootInActiveWindow();
@@ -488,18 +493,18 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
 
     private void handleNotificationScreen(AccessibilityNodeInfo root) {
         if (!canClickNow()) return;
-        if (isNotificationAlreadyEnabled(root)) {
+        boolean clicked = false;
+        clicked = clickSwitchNearText(root, "Wszystkie powiadomienia z aplikacji ZABKA TMSFalcon") || clicked;
+        clicked = clickSwitchNearText(root, "Wszystkie powiadomienia z aplikacji ZABKA TMSfalcon") || clicked;
+        clicked = clickSwitchNearText(root, "Wszystkie powiadomienia") || clicked;
+        clicked = clickSwitchNearText(root, "All notifications") || clicked;
+        clicked = clickSwitchNearText(root, "Zezwalaj na kropkę powiadomienia") || clicked;
+        clicked = clickSwitchNearText(root, "Zezwalaj na kropke powiadomienia") || clicked;
+        clicked = clickSwitchNearText(root, "Allow notification dot") || clicked;
+        clicked = clickAnyText(root, allowButtons) || clicked;
+        if (clicked) {
             markClicked();
-            goBackToPermissionsListLater();
-            return;
-        }
-        if (clickSwitchNearText(root, "Powiadomienia")
-                || clickSwitchNearText(root, "Zezwalaj na powiadomienia")
-                || clickSwitchNearText(root, "Notifications")
-                || clickSwitchNearText(root, "Allow notifications")
-                || clickAnyText(root, allowButtons)) {
-            markClicked();
-            goBackToPermissionsListLater();
+            handler.postDelayed(this::goBackToPermissionsListLater, 700);
         }
     }
 
@@ -520,7 +525,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
 
     private void handleGenericPermissionScreen(AccessibilityNodeInfo root) {
         if (!canClickNow()) return;
-        if (clickAnyText(root, allowButtons) || clickAnyText(root, whileUsingButtons)) {
+        if (clickAnyText(root, allowButtons)) {
             markClicked();
             goBackToPermissionsListLater();
         }
@@ -548,6 +553,20 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
             intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
             startActivity(intent);
         } catch (Exception ignored) {}
+    }
+
+    private void finishPermissionFlowWithMessage() {
+        if (finalToastShown) return;
+        finalToastShown = true;
+
+        try {
+            Toast.makeText(this, "Gotowe. Można uruchomić aplikację TMS.", Toast.LENGTH_LONG).show();
+        } catch (Exception ignored) {
+        }
+
+        setFlowMode(MODE_IDLE);
+        hideAutomationOverlay();
+        performGlobalAction(GLOBAL_ACTION_BACK);
     }
 
     private void openTmsAppAndFinishPermissionFlow() {
@@ -898,7 +917,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
             if (overlayWindowManager == null) return;
 
             FrameLayout root = new FrameLayout(this);
-            root.setBackgroundColor(Color.argb(210, 0, 0, 0));
+            root.setBackgroundColor(Color.argb(235, 0, 0, 0));
             root.setClickable(false);
             root.setFocusable(false);
             root.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
@@ -946,6 +965,9 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
     }
 
     private void setFlowMode(String mode) {
+        if (!MODE_IDLE.equals(mode)) {
+            finalToastShown = false;
+        }
         getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit().putString(KEY_FLOW_MODE, mode).apply();
     }
 
