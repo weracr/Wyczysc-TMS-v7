@@ -1,5 +1,6 @@
 package pl.zabka.wyczysctms;
 
+import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.admin.DevicePolicyManager;
@@ -95,7 +96,7 @@ public class MainActivity extends Activity {
                 grantPermissionsAfterInstall = false;
                 showRepairInProgressScreen();
                 Toast.makeText(this, "TMS zainstalowany. Nadaję uprawnienia.", Toast.LENGTH_LONG).show();
-                handler.postDelayed(this::grantTmsPermissionsThenOpen, 1200);
+                handler.postDelayed(this::grantTmsPermissionsAfterInstall, 1200);
             } else if (MODE_INSTALL_TMS.equals(getFlowMode())) {
                 clearFlowMode();
                 Toast.makeText(this, "TMS zainstalowany.", Toast.LENGTH_LONG).show();
@@ -155,7 +156,7 @@ public class MainActivity extends Activity {
         root.addView(adminLink, new LinearLayout.LayoutParams(-1, -2));
 
         TextView version = new TextView(this);
-        version.setText("v3.1 clean repair flow");
+        version.setText("v3.2 DPM permissions fallback");
         version.setTextColor(Color.rgb(152, 162, 179));
         version.setGravity(Gravity.CENTER);
         version.setTextSize(12);
@@ -223,7 +224,9 @@ public class MainActivity extends Activity {
             installNewestTmsFromDownload();
         });
 
-        addAdminButton(root, "Nadaj uprawnienia TMS i uruchom", v -> grantTmsPermissionsThenOpen());
+        addAdminButton(root, "Nadaj uprawnienia TMS programowo", v -> grantTmsPermissionsAfterInstall());
+
+        addAdminButton(root, "Nadaj uprawnienia TMS przez ustawienia", v -> grantTmsPermissionsThenOpen());
 
         addAdminButton(root, "3. Otwórz TMS", v -> openTms());
 
@@ -253,6 +256,7 @@ public class MainActivity extends Activity {
         File newestApk = findNewestTmsApkInDownload();
 
         addStatusLine("Administrator urządzenia", isDeviceAdminActive() ? "OK" : "BRAK", isDeviceAdminActive());
+        addStatusLine("Device Owner / Profile Owner", canGrantRuntimePermissionsByPolicy() ? "TAK" : "NIE", canGrantRuntimePermissionsByPolicy());
         addStatusLine("Usługa pomocnicza", isAccessibilityEnabled() ? "OK" : "BRAK", isAccessibilityEnabled());
         addStatusLine("Dostęp do plików", hasAllFilesAccess() ? "OK" : "BRAK", hasAllFilesAccess());
         addStatusLine("APK TMS w Download", newestApk != null ? "OK" : "BRAK", newestApk != null);
@@ -265,16 +269,13 @@ public class MainActivity extends Activity {
     }
 
     private void showRepairInProgressScreen() {
-        // Nie pokazujemy tu drugiego pełnoekranowego czarnego widoku.
-        // Ciemne przysłonięcie pokazuje PermissionClickerAccessibilityService jako overlay nad ekranami systemowymi.
-        // Dzięki temu nie ma dwóch nakładających się komunikatów.
         Toast.makeText(this, "Naprawa TMS w toku. Nie dotykaj ekranu.", Toast.LENGTH_LONG).show();
     }
 
     private void showRepairDialog() {
         new AlertDialog.Builder(this)
                 .setTitle("Naprawa TMS")
-                .setMessage("Aplikacja odinstaluje TMS, zainstaluje najnowszą wersję APK z Download, otworzy ustawienia TMS, nada brakujące uprawnienia i uruchomi TMS.\n\nJeżeli TMS jest uruchomiony i kierowca jest zalogowany, odinstalowanie może się nie udać. Wtedy zamknij TMS z ostatnich aplikacji i uruchom naprawę ponownie.")
+                .setMessage("Aplikacja odinstaluje TMS, zainstaluje najnowszą wersję APK z Download, spróbuje nadać uprawnienia programowo, a jeśli Android na to nie pozwoli, uruchomi flow przez ustawienia.")
                 .setPositiveButton("Napraw TMS", (d, w) -> repairTms())
                 .setNegativeButton("Anuluj", null)
                 .show();
@@ -392,6 +393,18 @@ public class MainActivity extends Activity {
         DevicePolicyManager dpm = (DevicePolicyManager) getSystemService(Context.DEVICE_POLICY_SERVICE);
         ComponentName admin = new ComponentName(this, ResetDeviceAdminReceiver.class);
         return dpm != null && dpm.isAdminActive(admin);
+    }
+
+    private boolean canGrantRuntimePermissionsByPolicy() {
+        try {
+            DevicePolicyManager dpm = (DevicePolicyManager) getSystemService(Context.DEVICE_POLICY_SERVICE);
+            if (dpm == null) {
+                return false;
+            }
+            return dpm.isDeviceOwnerApp(getPackageName()) || dpm.isProfileOwnerApp(getPackageName());
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     private boolean isAccessibilityEnabled() {
@@ -580,7 +593,7 @@ public class MainActivity extends Activity {
         Intent launchIntent = getPackageManager().getLaunchIntentForPackage(detectedTmsPackage);
         if (launchIntent != null) {
             startActivity(launchIntent);
-            Toast.makeText(this, "Uruchamiam TMS. Automatyczne zgody włączą się po chwili.", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Uruchamiam TMS.", Toast.LENGTH_SHORT).show();
             handler.postDelayed(() -> setFlowMode(MODE_OPEN_TMS), OPEN_TMS_AUTOMATION_DELAY_MS);
         } else {
             Toast.makeText(this, "Nie znaleziono TMS: " + detectedTmsPackage, Toast.LENGTH_LONG).show();
@@ -592,6 +605,74 @@ public class MainActivity extends Activity {
         Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
         intent.setData(Uri.parse("package:" + detectedTmsPackage));
         startActivity(intent);
+    }
+
+    private void grantTmsPermissionsAfterInstall() {
+        setFlowMode(MODE_FULL_REPAIR);
+        boolean grantedByPolicy = grantTmsPermissionsByPolicy();
+
+        if (grantedByPolicy) {
+            clearFlowMode();
+            Toast.makeText(this, "Gotowe. Można uruchomić aplikację TMS.", Toast.LENGTH_LONG).show();
+            return;
+        }
+
+        grantTmsPermissionsThenOpen();
+    }
+
+    private boolean grantTmsPermissionsByPolicy() {
+        DevicePolicyManager dpm = (DevicePolicyManager) getSystemService(Context.DEVICE_POLICY_SERVICE);
+        ComponentName admin = new ComponentName(this, ResetDeviceAdminReceiver.class);
+
+        if (dpm == null) {
+            return false;
+        }
+
+        if (!canGrantRuntimePermissionsByPolicy()) {
+            Toast.makeText(this, "Brak Device Owner/Profile Owner. Uruchamiam nadawanie przez ustawienia.", Toast.LENGTH_LONG).show();
+            return false;
+        }
+
+        boolean allOk = true;
+
+        allOk &= grantSinglePermission(dpm, admin, Manifest.permission.CAMERA);
+        allOk &= grantSinglePermission(dpm, admin, Manifest.permission.READ_CONTACTS);
+        allOk &= grantSinglePermission(dpm, admin, Manifest.permission.ACCESS_FINE_LOCATION);
+        allOk &= grantSinglePermission(dpm, admin, Manifest.permission.ACCESS_COARSE_LOCATION);
+        allOk &= grantSinglePermission(dpm, admin, Manifest.permission.READ_PHONE_STATE);
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            allOk &= grantSinglePermission(dpm, admin, Manifest.permission.ACCESS_BACKGROUND_LOCATION);
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            allOk &= grantSinglePermission(dpm, admin, Manifest.permission.BLUETOOTH_CONNECT);
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            allOk &= grantSinglePermission(dpm, admin, Manifest.permission.POST_NOTIFICATIONS);
+            allOk &= grantSinglePermission(dpm, admin, Manifest.permission.READ_MEDIA_IMAGES);
+            allOk &= grantSinglePermission(dpm, admin, Manifest.permission.READ_MEDIA_VIDEO);
+            allOk &= grantSinglePermission(dpm, admin, Manifest.permission.READ_MEDIA_AUDIO);
+        } else {
+            allOk &= grantSinglePermission(dpm, admin, Manifest.permission.READ_EXTERNAL_STORAGE);
+            allOk &= grantSinglePermission(dpm, admin, Manifest.permission.WRITE_EXTERNAL_STORAGE);
+        }
+
+        return allOk;
+    }
+
+    private boolean grantSinglePermission(DevicePolicyManager dpm, ComponentName admin, String permission) {
+        try {
+            return dpm.setPermissionGrantState(
+                    admin,
+                    detectedTmsPackage,
+                    permission,
+                    DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED
+            );
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     private void grantTmsPermissionsThenOpen() {
