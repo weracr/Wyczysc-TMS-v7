@@ -29,8 +29,8 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
     private WindowManager overlayWindowManager;
     private View automationOverlayView;
 
-    private static final long CLICK_DELAY_MS = 900;
-    private static final long BACK_DELAY_MS = 900;
+    private static final long CLICK_DELAY_MS = 850;
+    private static final long BACK_DELAY_MS = 850;
 
     private static final String PREFS_NAME = "wyczysctms_prefs";
     private static final String KEY_FLOW_MODE = "flow_mode";
@@ -47,6 +47,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
     private long lastBackTime = 0;
     private long lastOpenTmsTime = 0;
     private long lastForcedSettingsOpenTime = 0;
+    private long lastAppInfoTapTime = 0;
     private boolean openedAppSettingsForMissingPermission = false;
 
     private final List<String> tmsPackages = Arrays.asList(
@@ -97,9 +98,9 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
     @Override
     public void onAccessibilityEvent(AccessibilityEvent event) {
         if (event == null) return;
-        handler.postDelayed(() -> handleScreen(event), 450);
-        handler.postDelayed(() -> handleScreen(event), 1050);
-        handler.postDelayed(() -> handleScreen(event), 1900);
+        handler.postDelayed(() -> handleScreen(event), 400);
+        handler.postDelayed(() -> handleScreen(event), 950);
+        handler.postDelayed(() -> handleScreen(event), 1750);
     }
 
     @Override
@@ -127,10 +128,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         if (isOwnAppOrAdminPanel(packageName, screenText)) {
             if (isAutomationRunning()) {
                 showAutomationOverlay();
-
-                // Jeżeli tryb nadawania uprawnień jest aktywny, a nadal widzimy ekran Wyczyść TMS,
-                // wymuś otwarcie szczegółów TMS w ustawieniach.
-                if (isMode(MODE_GRANT_TMS_PERMISSIONS)) {
+                if (isMode(MODE_GRANT_TMS_PERMISSIONS) || isMode(MODE_FULL_REPAIR)) {
                     forceOpenTmsSettingsIfNeeded();
                 }
             } else {
@@ -142,7 +140,6 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
 
         if (isDetailsOnlyMode() || isIdleMode()) return;
         if (isBlockedAdminScreen(screenText)) return;
-
         if (!canHandleTmsPermissions()) return;
 
         if (isDefaultOpenScreen(packageName, screenText)) {
@@ -267,8 +264,11 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         return packageName.contains("settings")
                 && containsTmsText(screenText)
                 && (screenText.contains("otwieraj domyslnie")
-                || screenText.contains("otwieraj domyslnie")
-                || screenText.contains("open by default"));
+                || screenText.contains("otwieraj domyślnie")
+                || screenText.contains("open by default")
+                || screenText.contains("obslugiwane linki")
+                || screenText.contains("obsługiwane linki")
+                || screenText.contains("supported links"));
     }
 
     private void goBackFromWrongScreen() {
@@ -349,7 +349,24 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
 
     private void clickAppInfoPermissions(AccessibilityNodeInfo root) {
         if (!canClickNow()) return;
-        if (tapAppInfoPermissionsRow(root)) markClicked();
+        long now = System.currentTimeMillis();
+        if (now - lastAppInfoTapTime < 1000) return;
+        lastAppInfoTapTime = now;
+
+        if (tapAppInfoPermissionsRow(root)) {
+            markClicked();
+            return;
+        }
+
+        // Fallback for PM90/PM95 Settings layout. This taps the permissions row area,
+        // not the lower "Open by default" row.
+        Rect bounds = new Rect();
+        root.getBoundsInScreen(bounds);
+        if (!bounds.isEmpty()) {
+            int x = bounds.left + (bounds.width() / 2);
+            int y = bounds.top + (int) (bounds.height() * 0.34f);
+            if (tapAt(x, y)) markClicked();
+        }
     }
 
     private boolean tapAppInfoPermissionsRow(AccessibilityNodeInfo root) {
@@ -530,8 +547,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
             startActivity(intent);
-        } catch (Exception ignored) {
-        }
+        } catch (Exception ignored) {}
     }
 
     private void openTmsAppAndFinishPermissionFlow() {
@@ -885,6 +901,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
             root.setBackgroundColor(Color.argb(210, 0, 0, 0));
             root.setClickable(false);
             root.setFocusable(false);
+            root.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
 
             TextView message = new TextView(this);
             message.setText("Naprawa TMS w toku\nNie dotykaj ekranu\nAplikacja automatycznie odinstaluje, zainstaluje i nada uprawnienia");
@@ -892,6 +909,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
             message.setTextSize(20);
             message.setGravity(Gravity.CENTER);
             message.setPadding(36, 36, 36, 36);
+            message.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
 
             FrameLayout.LayoutParams msgParams = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT);
             msgParams.gravity = Gravity.CENTER;
