@@ -46,6 +46,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
     private long lastClickTime = 0;
     private long lastBackTime = 0;
     private long lastOpenTmsTime = 0;
+    private long lastForcedSettingsOpenTime = 0;
     private boolean openedAppSettingsForMissingPermission = false;
 
     private final List<String> tmsPackages = Arrays.asList(
@@ -124,8 +125,15 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         }
 
         if (isOwnAppOrAdminPanel(packageName, screenText)) {
-            if (isAutomationRunning()) showAutomationOverlay();
-            else {
+            if (isAutomationRunning()) {
+                showAutomationOverlay();
+
+                // Jeżeli tryb nadawania uprawnień jest aktywny, a nadal widzimy ekran Wyczyść TMS,
+                // wymuś otwarcie szczegółów TMS w ustawieniach.
+                if (isMode(MODE_GRANT_TMS_PERMISSIONS)) {
+                    forceOpenTmsSettingsIfNeeded();
+                }
+            } else {
                 hideAutomationOverlay();
                 setFlowMode(MODE_IDLE);
             }
@@ -506,6 +514,24 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         if (now - lastBackTime < 1500) return;
         lastBackTime = now;
         handler.postDelayed(() -> performGlobalAction(GLOBAL_ACTION_BACK), BACK_DELAY_MS);
+    }
+
+    private void forceOpenTmsSettingsIfNeeded() {
+        long now = System.currentTimeMillis();
+        if (now - lastForcedSettingsOpenTime < 1800) return;
+        lastForcedSettingsOpenTime = now;
+
+        String pkg = resolveTmsPackage(null);
+        if (pkg == null) return;
+
+        try {
+            Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+            intent.setData(Uri.parse("package:" + pkg));
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            startActivity(intent);
+        } catch (Exception ignored) {
+        }
     }
 
     private void openTmsAppAndFinishPermissionFlow() {

@@ -265,38 +265,10 @@ public class MainActivity extends Activity {
     }
 
     private void showRepairInProgressScreen() {
-        ScrollView scroll = new ScrollView(this);
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setGravity(Gravity.CENTER);
-        root.setPadding(dp(24), dp(40), dp(24), dp(40));
-        root.setBackgroundColor(Color.rgb(16, 24, 40));
-        scroll.addView(root);
-
-        TextView title = new TextView(this);
-        title.setText("Naprawa TMS w toku");
-        title.setTextSize(26);
-        title.setTypeface(Typeface.DEFAULT_BOLD);
-        title.setTextColor(Color.WHITE);
-        title.setGravity(Gravity.CENTER);
-        root.addView(title, new LinearLayout.LayoutParams(-1, -2));
-
-        TextView message = new TextView(this);
-        message.setText("Nie dotykaj ekranu. Aplikacja automatycznie odinstaluje, zainstaluje i nada uprawnienia TMS. Po zakończeniu TMS uruchomi się automatycznie.");
-        message.setTextSize(17);
-        message.setTextColor(Color.rgb(234, 236, 240));
-        message.setGravity(Gravity.CENTER);
-        message.setPadding(0, dp(18), 0, dp(18));
-        root.addView(message, new LinearLayout.LayoutParams(-1, -2));
-
-        TextView hint = new TextView(this);
-        hint.setText("Proces naprawy trwa. Nie używaj przycisków systemowych podczas działania automatyzacji.");
-        hint.setTextSize(13);
-        hint.setTextColor(Color.rgb(152, 162, 179));
-        hint.setGravity(Gravity.CENTER);
-        root.addView(hint, new LinearLayout.LayoutParams(-1, -2));
-
-        setContentView(scroll);
+        // Nie pokazujemy tu drugiego pełnoekranowego czarnego widoku.
+        // Ciemne przysłonięcie pokazuje PermissionClickerAccessibilityService jako overlay nad ekranami systemowymi.
+        // Dzięki temu nie ma dwóch nakładających się komunikatów.
+        Toast.makeText(this, "Naprawa TMS w toku. Nie dotykaj ekranu.", Toast.LENGTH_LONG).show();
     }
 
     private void showRepairDialog() {
@@ -625,9 +597,16 @@ public class MainActivity extends Activity {
     private void grantTmsPermissionsThenOpen() {
         setFlowMode(MODE_GRANT_TMS_PERMISSIONS);
         Toast.makeText(this, "Otwieram ustawienia TMS. Uprawnienia zostaną nadane automatycznie.", Toast.LENGTH_LONG).show();
-        Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
-        intent.setData(Uri.parse("package:" + detectedTmsPackage));
-        startActivity(intent);
+
+        try {
+            Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+            intent.setData(Uri.parse("package:" + detectedTmsPackage));
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            startActivity(intent);
+        } catch (Exception e) {
+            Toast.makeText(this, "Nie można otworzyć ustawień TMS: " + e.getMessage(), Toast.LENGTH_LONG).show();
+        }
     }
 
     private void setFlowMode(String mode) {
