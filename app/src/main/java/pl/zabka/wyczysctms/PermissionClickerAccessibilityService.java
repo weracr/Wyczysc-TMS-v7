@@ -399,6 +399,23 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         return clicked;
     }
 
+    private boolean isDefaultOpenScreen(String packageName, String screenText) {
+        return packageName.contains("settings")
+                && containsTmsText(screenText)
+                && (screenText.contains("otwieraj domyslnie")
+                || screenText.contains("otwieraj domyślnie")
+                || screenText.contains("open by default")
+                || screenText.contains("ustaw jako domyslne")
+                || screenText.contains("ustaw jako domyślne"));
+    }
+
+    private void goBackFromWrongDefaultOpenScreen() {
+        long now = System.currentTimeMillis();
+        if (now - lastBackTime < 1200) return;
+        lastBackTime = now;
+        performGlobalAction(GLOBAL_ACTION_BACK);
+    }
+
     private boolean isTmsAppInfoScreen(String packageName, String screenText) {
         return packageName.contains("settings")
                 && containsTmsText(screenText)
@@ -411,12 +428,9 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
     }
 
     private void clickAppInfoPermissions(AccessibilityNodeInfo root) {
-        if (!canClickNow()) {
-            return;
-        }
-        if (tapTextCenter(root, "Uprawnienia")
-                || tapTextCenter(root, "Permissions")
-                || tapTextCenter(root, "Zezwolenia")) {
+        if (!canClickNow()) return;
+
+        if (tapAppInfoPermissionsRow(root)) {
             markClicked();
         }
     }
@@ -662,6 +676,76 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         }
         int permissionIndex = text.indexOf(permission, deniedIndex);
         return permissionIndex > deniedIndex;
+    }
+
+    private boolean tapAppInfoPermissionsRow(AccessibilityNodeInfo root) {
+        if (root == null) return false;
+
+        // Najpierw szukamy dokładnego tekstu głównego wiersza: "Uprawnienia".
+        // Nie bierzemy tekstu pomocniczego typu "Brak przyznanych uprawnień".
+        if (tapExactTextRow(root, "Uprawnienia")) return true;
+        if (tapExactTextRow(root, "Permissions")) return true;
+        if (tapExactTextRow(root, "Zezwolenia")) return true;
+
+        return false;
+    }
+
+    private boolean tapExactTextRow(AccessibilityNodeInfo root, String text) {
+        if (root == null || text == null) return false;
+
+        List<AccessibilityNodeInfo> nodes = root.findAccessibilityNodeInfosByText(text);
+        if (nodes == null || nodes.isEmpty()) return false;
+
+        String wanted = normalize(text);
+
+        for (AccessibilityNodeInfo node : nodes) {
+            if (node == null) continue;
+
+            String nodeText = normalize(getNodeVisibleText(node));
+
+            // Dokładne dopasowanie. Dzięki temu nie klikamy np. "Brak przyznanych uprawnień".
+            if (!nodeText.equals(wanted)) continue;
+
+            Rect textRect = new Rect();
+            node.getBoundsInScreen(textRect);
+            if (textRect.isEmpty()) continue;
+
+            // Szukamy klikalnego rodzica wiersza, ale tylko blisko tekstu.
+            AccessibilityNodeInfo row = findSmallClickableParent(node, textRect.centerY());
+            if (row != null) {
+                Rect rowRect = new Rect();
+                row.getBoundsInScreen(rowRect);
+                if (!rowRect.isEmpty()) {
+                    return tapAt(rowRect.centerX(), rowRect.centerY());
+                }
+            }
+
+            // Fallback: klik w lewą połowę ekranu na wysokości tekstu.
+            // To trafia w wiersz "Uprawnienia", a nie w niższy wiersz "Otwieraj domyślnie".
+            Rect rootRect = new Rect();
+            root.getBoundsInScreen(rootRect);
+            int x = rootRect.isEmpty() ? textRect.centerX() : Math.max(textRect.centerX(), rootRect.left + (rootRect.width() / 3));
+            return tapAt(x, textRect.centerY());
+        }
+
+        return false;
+    }
+
+    private AccessibilityNodeInfo findSmallClickableParent(AccessibilityNodeInfo node, int expectedY) {
+        AccessibilityNodeInfo current = node;
+        for (int i = 0; i < 5 && current != null; i++) {
+            Rect rect = new Rect();
+            current.getBoundsInScreen(rect);
+            if (!rect.isEmpty()) {
+                int height = rect.height();
+                boolean looksLikeRow = height > 36 && height < 220 && expectedY >= rect.top && expectedY <= rect.bottom;
+                if (looksLikeRow && current.isClickable() && current.isEnabled()) {
+                    return current;
+                }
+            }
+            current = current.getParent();
+        }
+        return null;
     }
 
     private boolean tapTextCenter(AccessibilityNodeInfo root, String text) {
