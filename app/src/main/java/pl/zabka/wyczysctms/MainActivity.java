@@ -155,7 +155,7 @@ public class MainActivity extends Activity {
         root.addView(adminLink, new LinearLayout.LayoutParams(-1, -2));
 
         TextView version = new TextView(this);
-        version.setText("v3.0 clean repair flow");
+        version.setText("v3.1 clean repair flow");
         version.setTextColor(Color.rgb(152, 162, 179));
         version.setGravity(Gravity.CENTER);
         version.setTextSize(12);

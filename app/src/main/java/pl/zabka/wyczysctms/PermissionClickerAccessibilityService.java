@@ -20,17 +20,17 @@ import android.view.accessibility.AccessibilityNodeInfo;
 import android.widget.FrameLayout;
 import android.widget.TextView;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
 public class PermissionClickerAccessibilityService extends AccessibilityService {
-
     private final Handler handler = new Handler(Looper.getMainLooper());
     private WindowManager overlayWindowManager;
     private View automationOverlayView;
 
-    private static final long CLICK_DELAY_MS = 950;
-    private static final long BACK_DELAY_MS = 950;
+    private static final long CLICK_DELAY_MS = 900;
+    private static final long BACK_DELAY_MS = 900;
 
     private static final String PREFS_NAME = "wyczysctms_prefs";
     private static final String KEY_FLOW_MODE = "flow_mode";
@@ -45,6 +45,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
 
     private long lastClickTime = 0;
     private long lastBackTime = 0;
+    private long lastOpenTmsTime = 0;
     private boolean openedAppSettingsForMissingPermission = false;
 
     private final List<String> tmsPackages = Arrays.asList(
@@ -55,150 +56,94 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
             "com.zabka.tmsfalcon"
     );
 
-    private final List<String> whileUsingButtons = Arrays.asList(
-            "Podczas używania aplikacji",
-            "Podczas uzywania aplikacji",
-            "Podczas używania tej aplikacji",
-            "Podczas uzywania tej aplikacji",
-            "Zezwól tylko podczas używania aplikacji",
-            "Zezwol tylko podczas uzywania aplikacji",
-            "Zezwalaj tylko podczas używania aplikacji",
-            "Zezwalaj tylko podczas uzywania aplikacji",
-            "While using the app",
-            "While using this app",
-            "Allow only while using the app"
-    );
-
-    private final List<String> alwaysLocationButtons = Arrays.asList(
-            "Zawsze zezwalaj",
-            "Zawsze pozwalaj",
-            "Zezwalaj cały czas",
-            "Zezwalaj caly czas",
-            "Zezwalaj zawsze",
-            "Allow all the time",
-            "Always allow",
-            "Allow always"
+    private final List<String> installerButtons = Arrays.asList(
+            "Gotowe", "Done",
+            "Zainstaluj", "Instaluj", "Aktualizuj", "Zaktualizuj",
+            "Install", "Update", "Dalej", "Next", "Kontynuuj", "Continue",
+            "Zainstaluj mimo to", "Install anyway", "OK", "Ok"
     );
 
     private final List<String> allowButtons = Arrays.asList(
-            "Zezwól",
-            "Zezwol",
-            "Zezwalaj",
-            "Allow",
-            "OK",
-            "Ok",
-            "Włącz",
-            "Wlacz",
-            "Kontynuuj",
-            "Dalej",
-            "Potwierdź",
-            "Potwierdz",
-            "Rozumiem"
+            "Zezwól", "Zezwol", "Zezwalaj", "Allow", "OK", "Ok",
+            "Włącz", "Wlacz", "Kontynuuj", "Dalej", "Potwierdź", "Potwierdz", "Rozumiem"
     );
 
-    private final List<String> installerButtons = Arrays.asList(
-            "Gotowe",
-            "Done",
-            "Zainstaluj",
-            "Instaluj",
-            "Aktualizuj",
-            "Zaktualizuj",
-            "Install",
-            "Update",
-            "Dalej",
-            "Next",
-            "Kontynuuj",
-            "Continue",
-            "Zainstaluj mimo to",
-            "Install anyway",
-            "OK",
-            "Ok"
+    private final List<String> whileUsingButtons = Arrays.asList(
+            "Podczas używania aplikacji", "Podczas uzywania aplikacji",
+            "Podczas używania tej aplikacji", "Podczas uzywania tej aplikacji",
+            "Zezwól tylko podczas używania aplikacji", "Zezwol tylko podczas uzywania aplikacji",
+            "Zezwalaj tylko podczas używania aplikacji", "Zezwalaj tylko podczas uzywania aplikacji",
+            "While using the app", "While using this app", "Allow only while using the app"
     );
 
-    private final List<String> deniedPermissionNames = Arrays.asList(
-            "Aparat",
-            "Camera",
-            "Powiadomienia",
-            "Notifications",
-            "Lokalizacja",
-            "Location",
-            "Kontakty",
-            "Contacts",
-            "Telefon",
-            "Phone",
-            "Zdjęcia i filmy",
-            "Zdjecia i filmy",
-            "Photos and videos",
-            "Zdjęcia",
-            "Zdjecia",
-            "Photos",
-            "Urządzenia w pobliżu",
-            "Urzadzenia w poblizu",
-            "Nearby devices",
-            "Muzyka i dźwięk",
-            "Muzyka i dzwiek",
-            "Music and audio"
+    private final List<String> alwaysLocationButtons = Arrays.asList(
+            "Zawsze zezwalaj", "Zawsze pozwalaj", "Zezwalaj cały czas", "Zezwalaj caly czas",
+            "Zezwalaj zawsze", "Allow all the time", "Always allow", "Allow always"
+    );
+
+    private final List<String> permissionRows = Arrays.asList(
+            "Aparat", "Camera",
+            "Powiadomienia", "Notifications",
+            "Lokalizacja", "Location",
+            "Kontakty", "Contacts",
+            "Telefon", "Phone",
+            "Zdjęcia i filmy", "Zdjecia i filmy", "Photos and videos",
+            "Zdjęcia", "Zdjecia", "Photos",
+            "Urządzenia w pobliżu", "Urzadzenia w poblizu", "Nearby devices",
+            "Muzyka i dźwięk", "Muzyka i dzwiek", "Music and audio"
     );
 
     @Override
     public void onAccessibilityEvent(AccessibilityEvent event) {
-        if (event == null) {
-            return;
-        }
-        handler.postDelayed(() -> handleScreen(event), 550);
-        handler.postDelayed(() -> handleScreen(event), 1200);
-        handler.postDelayed(() -> handleScreen(event), 2100);
+        if (event == null) return;
+        handler.postDelayed(() -> handleScreen(event), 450);
+        handler.postDelayed(() -> handleScreen(event), 1050);
+        handler.postDelayed(() -> handleScreen(event), 1900);
     }
 
     @Override
-    public void onInterrupt() {
-    }
+    public void onInterrupt() {}
 
     private void handleScreen(AccessibilityEvent event) {
         updateOverlayVisibility();
 
         AccessibilityNodeInfo root = getRootInActiveWindow();
-        if (root == null) {
-            return;
-        }
+        if (root == null) return;
 
         String packageName = event.getPackageName() == null ? "" : event.getPackageName().toString().toLowerCase();
         String screenText = normalize(collectText(root) + " " + collectEventText(event));
 
         if (canHandleUninstall() && isUninstallConfirmationDialog(packageName, screenText)) {
-            clickUninstallConfirmation(root);
+            handleUninstallDialog(root);
             return;
         }
 
         if (canHandleInstall() && isInstallerScreen(packageName, screenText)) {
-            clickInstallerButtons(root);
+            handleInstaller(root);
             return;
         }
 
         if (isOwnAppOrAdminPanel(packageName, screenText)) {
-            if (isAutomationRunning()) {
-                showAutomationOverlay();
-            } else {
+            if (isAutomationRunning()) showAutomationOverlay();
+            else {
                 hideAutomationOverlay();
                 setFlowMode(MODE_IDLE);
             }
             return;
         }
 
-        if (isDetailsOnlyMode() || isIdleMode()) {
-            return;
-        }
+        if (isDetailsOnlyMode() || isIdleMode()) return;
+        if (isBlockedAdminScreen(screenText)) return;
 
-        if (isBlockedAdminScreen(screenText)) {
-            return;
-        }
+        if (!canHandleTmsPermissions()) return;
 
-        if (!canHandleTmsPermissions()) {
+        if (isDefaultOpenScreen(packageName, screenText)) {
+            goBackFromWrongScreen();
             return;
         }
 
         if (isRuntimePermissionDialog(packageName, screenText)) {
-            clickRuntimePermission(root, screenText);
+            handleRuntimePermissionDialog(root, screenText);
             return;
         }
 
@@ -217,37 +162,35 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
             return;
         }
 
-        if (isCameraPermissionSettings(packageName, screenText)) {
-            handleCameraSettings(root);
+        if (isCameraPermissionScreen(packageName, screenText)) {
+            handleCameraScreen(root);
             return;
         }
 
-        if (isLocationPermissionSettings(packageName, screenText)) {
-            handleLocationSettings(root);
+        if (isLocationPermissionScreen(packageName, screenText)) {
+            handleLocationScreen(root);
             return;
         }
 
-        if (isNotificationSettings(packageName, screenText)) {
-            handleNotificationSettings(root);
+        if (isNotificationPermissionScreen(packageName, screenText)) {
+            handleNotificationScreen(root);
             return;
         }
 
-        if (isGenericPermissionSettings(packageName, screenText)) {
-            handleGenericPermissionSettings(root);
+        if (isGenericPermissionScreen(packageName, screenText)) {
+            handleGenericPermissionScreen(root);
             return;
         }
 
         if (isTmsPermissionInfoScreen(screenText)) {
-            if (clickTmsPermissionInfo(root)) {
-                return;
-            }
+            if (clickTmsPermissionInfo(root)) return;
             openTmsAppSettingsFromMissingPermission(packageName, screenText);
         }
     }
 
     private boolean isOwnAppOrAdminPanel(String packageName, String screenText) {
-        String ownPackage = getPackageName().toLowerCase();
         String text = normalize(screenText);
+        String ownPackage = getPackageName().toLowerCase();
         return packageName.equals(ownPackage)
                 || packageName.contains("wyczysctms")
                 || text.contains("wyczysc tms")
@@ -260,24 +203,20 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         boolean systemDialog = packageName.contains("packageinstaller")
                 || packageName.contains("android")
                 || packageName.contains("settings");
-
         boolean uninstallText = screenText.contains("odinstalowac")
                 || screenText.contains("odinstaluj")
                 || screenText.contains("uninstall")
                 || screenText.contains("usunac aplikacje")
-                || screenText.contains("usunąć aplikację");
-
+                || screenText.contains("usunac te aplikacje");
         return systemDialog && uninstallText;
     }
 
-    private void clickUninstallConfirmation(AccessibilityNodeInfo root) {
-        if (!canClickNow()) {
-            return;
-        }
-        if (clickByTextForUninstall(root, "OK")
-                || clickByTextForUninstall(root, "Ok")
-                || clickByTextForUninstall(root, "Odinstaluj")
-                || clickByTextForUninstall(root, "Uninstall")) {
+    private void handleUninstallDialog(AccessibilityNodeInfo root) {
+        if (!canClickNow()) return;
+        if (clickByTextAllowDanger(root, "OK")
+                || clickByTextAllowDanger(root, "Ok")
+                || clickByTextAllowDanger(root, "Odinstaluj")
+                || clickByTextAllowDanger(root, "Uninstall")) {
             markClicked();
         }
     }
@@ -288,14 +227,10 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
                 || packageName.contains("files")
                 || packageName.contains("documentsui")
                 || packageName.contains("package");
-
-        boolean installCompletion = screenText.contains("aplikacja zostala zainstalowana")
+        boolean completion = screenText.contains("aplikacja zostala zainstalowana")
                 || screenText.contains("aplikacja została zainstalowana")
                 || screenText.contains("app installed")
-                || screenText.contains("application installed")
-                || screenText.contains("zostala zainstalowana")
-                || screenText.contains("została zainstalowana");
-
+                || screenText.contains("application installed");
         boolean installAction = screenText.contains("zainstaluj")
                 || screenText.contains("instaluj")
                 || screenText.contains("aktualizuj")
@@ -307,31 +242,38 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
                 || screenText.contains("continue")
                 || screenText.contains("gotowe")
                 || screenText.contains("done");
-
         boolean danger = screenText.contains("odinstaluj")
                 || screenText.contains("uninstall")
                 || screenText.contains("dezaktywuj")
                 || screenText.contains("clear data")
-                || screenText.contains("wyczysc dane")
-                || screenText.contains("wyczyść dane");
-
-        return (installerPackage || installCompletion) && installAction && !danger;
+                || screenText.contains("wyczysc dane");
+        return (installerPackage || completion) && installAction && !danger;
     }
 
-    private void clickInstallerButtons(AccessibilityNodeInfo root) {
-        if (!canClickNow()) {
-            return;
-        }
-        if (clickAnyText(root, installerButtons)) {
-            markClicked();
-        }
+    private void handleInstaller(AccessibilityNodeInfo root) {
+        if (!canClickNow()) return;
+        if (clickAnyText(root, installerButtons)) markClicked();
+    }
+
+    private boolean isDefaultOpenScreen(String packageName, String screenText) {
+        return packageName.contains("settings")
+                && containsTmsText(screenText)
+                && (screenText.contains("otwieraj domyslnie")
+                || screenText.contains("otwieraj domyslnie")
+                || screenText.contains("open by default"));
+    }
+
+    private void goBackFromWrongScreen() {
+        long now = System.currentTimeMillis();
+        if (now - lastBackTime < 1200) return;
+        lastBackTime = now;
+        performGlobalAction(GLOBAL_ACTION_BACK);
     }
 
     private boolean isRuntimePermissionDialog(String packageName, String screenText) {
         boolean system = packageName.contains("permissioncontroller")
                 || packageName.contains("packageinstaller")
                 || packageName.contains("android");
-
         boolean permission = screenText.contains("zezwol")
                 || screenText.contains("zezwalaj")
                 || screenText.contains("allow")
@@ -351,26 +293,17 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
                 || screenText.contains("zdjec")
                 || screenText.contains("photos")
                 || screenText.contains("nearby devices");
-
         return system && permission && containsTmsText(screenText);
     }
 
-    private void clickRuntimePermission(AccessibilityNodeInfo root, String screenText) {
-        if (!canClickNow()) {
+    private void handleRuntimePermissionDialog(AccessibilityNodeInfo root, String screenText) {
+        if (!canClickNow()) return;
+        if ((screenText.contains("aparat") || screenText.contains("camera") || screenText.contains("lokalizacja") || screenText.contains("location"))
+                && clickAnyText(root, whileUsingButtons)) {
+            markClicked();
             return;
         }
-        if (screenText.contains("aparat")
-                || screenText.contains("camera")
-                || screenText.contains("lokalizacja")
-                || screenText.contains("location")) {
-            if (clickAnyText(root, whileUsingButtons)) {
-                markClicked();
-                return;
-            }
-        }
-        if (clickAnyText(root, allowButtons)) {
-            markClicked();
-        }
+        if (clickAnyText(root, allowButtons)) markClicked();
     }
 
     private boolean isTmsLocationPopup(String text) {
@@ -383,9 +316,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
     }
 
     private boolean clickTmsPermissionInfo(AccessibilityNodeInfo root) {
-        if (!canClickNow()) {
-            return false;
-        }
+        if (!canClickNow()) return false;
         boolean clicked = clickByText(root, "ZAKTUALIZUJ USTAWIENIA")
                 || clickByText(root, "Zaktualizuj ustawienia")
                 || clickByText(root, "AKTUALIZUJ USTAWIENIA")
@@ -393,27 +324,8 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
                 || clickByText(root, "Ustawienia")
                 || clickByText(root, "Settings")
                 || clickByText(root, "Update settings");
-        if (clicked) {
-            markClicked();
-        }
+        if (clicked) markClicked();
         return clicked;
-    }
-
-    private boolean isDefaultOpenScreen(String packageName, String screenText) {
-        return packageName.contains("settings")
-                && containsTmsText(screenText)
-                && (screenText.contains("otwieraj domyslnie")
-                || screenText.contains("otwieraj domyślnie")
-                || screenText.contains("open by default")
-                || screenText.contains("ustaw jako domyslne")
-                || screenText.contains("ustaw jako domyślne"));
-    }
-
-    private void goBackFromWrongDefaultOpenScreen() {
-        long now = System.currentTimeMillis();
-        if (now - lastBackTime < 1200) return;
-        lastBackTime = now;
-        performGlobalAction(GLOBAL_ACTION_BACK);
     }
 
     private boolean isTmsAppInfoScreen(String packageName, String screenText) {
@@ -421,18 +333,60 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
                 && containsTmsText(screenText)
                 && (screenText.contains("o aplikacji")
                 || screenText.contains("informacje o aplikacji")
-                || screenText.contains("brak przyznanych uprawnien")
                 || screenText.contains("app info")
                 || screenText.contains("uprawnienia")
-                || screenText.contains("permissions"));
+                || screenText.contains("permissions")
+                || screenText.contains("brak przyznanych uprawnien"));
     }
 
     private void clickAppInfoPermissions(AccessibilityNodeInfo root) {
         if (!canClickNow()) return;
+        if (tapAppInfoPermissionsRow(root)) markClicked();
+    }
 
-        if (tapAppInfoPermissionsRow(root)) {
-            markClicked();
+    private boolean tapAppInfoPermissionsRow(AccessibilityNodeInfo root) {
+        List<AccessibilityNodeInfo> exactNodes = new ArrayList<>();
+        collectExactNodes(root, "uprawnienia", exactNodes);
+        if (exactNodes.isEmpty()) collectExactNodes(root, "permissions", exactNodes);
+        if (exactNodes.isEmpty()) collectExactNodes(root, "zezwolenia", exactNodes);
+
+        for (AccessibilityNodeInfo node : exactNodes) {
+            Rect textRect = new Rect();
+            node.getBoundsInScreen(textRect);
+            if (textRect.isEmpty()) continue;
+            AccessibilityNodeInfo row = findSmallClickableParent(node, textRect.centerY());
+            if (row != null) {
+                Rect rowRect = new Rect();
+                row.getBoundsInScreen(rowRect);
+                if (!rowRect.isEmpty()) return tapAt(rowRect.centerX(), rowRect.centerY());
+            }
+            return tapAt(textRect.centerX(), textRect.centerY());
         }
+        return false;
+    }
+
+    private void collectExactNodes(AccessibilityNodeInfo node, String wanted, List<AccessibilityNodeInfo> out) {
+        if (node == null) return;
+        CharSequence text = node.getText();
+        if (text != null && normalize(text.toString()).equals(wanted)) out.add(node);
+        CharSequence desc = node.getContentDescription();
+        if (desc != null && normalize(desc.toString()).equals(wanted)) out.add(node);
+        for (int i = 0; i < node.getChildCount(); i++) collectExactNodes(node.getChild(i), wanted, out);
+    }
+
+    private AccessibilityNodeInfo findSmallClickableParent(AccessibilityNodeInfo node, int expectedY) {
+        AccessibilityNodeInfo current = node;
+        for (int i = 0; i < 6 && current != null; i++) {
+            Rect rect = new Rect();
+            current.getBoundsInScreen(rect);
+            if (!rect.isEmpty()) {
+                int height = rect.height();
+                boolean isRow = height > 35 && height < 240 && expectedY >= rect.top && expectedY <= rect.bottom;
+                if (isRow && current.isClickable() && current.isEnabled()) return current;
+            }
+            current = current.getParent();
+        }
+        return null;
     }
 
     private boolean isAppPermissionsListScreen(String packageName, String screenText) {
@@ -447,55 +401,44 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
     }
 
     private void handlePermissionsList(AccessibilityNodeInfo root, String screenText) {
-        if (!canClickNow()) {
-            return;
-        }
-
-        for (String permissionName : deniedPermissionNames) {
-            if (isPermissionInDeniedSection(screenText, permissionName)) {
-                if (tapPermissionRowByText(root, permissionName)) {
+        if (!canClickNow()) return;
+        for (String permission : permissionRows) {
+            if (isPermissionInDeniedSection(screenText, permission)) {
+                if (tapPermissionRowByText(root, permission)) {
                     markClicked();
                     return;
                 }
             }
         }
-
-        handler.postDelayed(this::openTmsAppAndFinishPermissionFlow, 1000);
+        long now = System.currentTimeMillis();
+        if (now - lastOpenTmsTime > 2500) {
+            lastOpenTmsTime = now;
+            handler.postDelayed(this::openTmsAppAndFinishPermissionFlow, 900);
+        }
     }
 
-    private boolean isCameraPermissionSettings(String packageName, String screenText) {
+    private boolean isCameraPermissionScreen(String packageName, String screenText) {
         return (packageName.contains("settings") || packageName.contains("permissioncontroller"))
                 && containsTmsText(screenText)
-                && (screenText.contains("aparat")
-                || screenText.contains("camera")
-                || screenText.contains("robienie zdjec")
-                || screenText.contains("record video"));
+                && (screenText.contains("aparat") || screenText.contains("camera") || screenText.contains("robienie zdjec") || screenText.contains("record video"));
     }
 
-    private void handleCameraSettings(AccessibilityNodeInfo root) {
-        if (!canClickNow()) {
-            return;
-        }
+    private void handleCameraScreen(AccessibilityNodeInfo root) {
+        if (!canClickNow()) return;
         if (clickAnyText(root, whileUsingButtons) || clickAnyText(root, allowButtons)) {
             markClicked();
             goBackToPermissionsListLater();
         }
     }
 
-    private boolean isLocationPermissionSettings(String packageName, String screenText) {
+    private boolean isLocationPermissionScreen(String packageName, String screenText) {
         return packageName.contains("settings")
                 && containsTmsText(screenText)
-                && (screenText.contains("lokalizacja")
-                || screenText.contains("location")
-                || screenText.contains("zawsze zezwalaj")
-                || screenText.contains("allow all the time")
-                || screenText.contains("precise location"));
+                && (screenText.contains("lokalizacja") || screenText.contains("location") || screenText.contains("zawsze zezwalaj") || screenText.contains("allow all the time") || screenText.contains("precise location"));
     }
 
-    private void handleLocationSettings(AccessibilityNodeInfo root) {
-        if (!canClickNow()) {
-            return;
-        }
+    private void handleLocationScreen(AccessibilityNodeInfo root) {
+        if (!canClickNow()) return;
         if (isAlwaysLocationAlreadyChecked(root)) {
             enablePreciseLocationIfVisible(root);
             markClicked();
@@ -505,28 +448,21 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         if (clickAnyText(root, alwaysLocationButtons) || clickAnyText(root, whileUsingButtons)) {
             markClicked();
             handler.postDelayed(() -> {
-                AccessibilityNodeInfo currentRoot = getRootInActiveWindow();
-                if (currentRoot != null) {
-                    enablePreciseLocationIfVisible(currentRoot);
-                }
-            }, 700);
+                AccessibilityNodeInfo r = getRootInActiveWindow();
+                if (r != null) enablePreciseLocationIfVisible(r);
+            }, 650);
             goBackToPermissionsListLater();
         }
     }
 
-    private boolean isNotificationSettings(String packageName, String screenText) {
+    private boolean isNotificationPermissionScreen(String packageName, String screenText) {
         return (packageName.contains("settings") || packageName.contains("permissioncontroller"))
                 && containsTmsText(screenText)
-                && (screenText.contains("powiadomienia")
-                || screenText.contains("notifications")
-                || screenText.contains("zezwalaj na powiadomienia")
-                || screenText.contains("allow notifications"));
+                && (screenText.contains("powiadomienia") || screenText.contains("notifications") || screenText.contains("zezwalaj na powiadomienia") || screenText.contains("allow notifications"));
     }
 
-    private void handleNotificationSettings(AccessibilityNodeInfo root) {
-        if (!canClickNow()) {
-            return;
-        }
+    private void handleNotificationScreen(AccessibilityNodeInfo root) {
+        if (!canClickNow()) return;
         if (isNotificationAlreadyEnabled(root)) {
             markClicked();
             goBackToPermissionsListLater();
@@ -542,7 +478,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         }
     }
 
-    private boolean isGenericPermissionSettings(String packageName, String screenText) {
+    private boolean isGenericPermissionScreen(String packageName, String screenText) {
         return (packageName.contains("settings") || packageName.contains("permissioncontroller"))
                 && containsTmsText(screenText)
                 && (screenText.contains("kontakty")
@@ -557,10 +493,8 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
                 || screenText.contains("music"));
     }
 
-    private void handleGenericPermissionSettings(AccessibilityNodeInfo root) {
-        if (!canClickNow()) {
-            return;
-        }
+    private void handleGenericPermissionScreen(AccessibilityNodeInfo root) {
+        if (!canClickNow()) return;
         if (clickAnyText(root, allowButtons) || clickAnyText(root, whileUsingButtons)) {
             markClicked();
             goBackToPermissionsListLater();
@@ -569,9 +503,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
 
     private void goBackToPermissionsListLater() {
         long now = System.currentTimeMillis();
-        if (now - lastBackTime < 1700) {
-            return;
-        }
+        if (now - lastBackTime < 1500) return;
         lastBackTime = now;
         handler.postDelayed(() -> performGlobalAction(GLOBAL_ACTION_BACK), BACK_DELAY_MS);
     }
@@ -583,7 +515,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
                 setFlowMode(MODE_IDLE);
                 hideAutomationOverlay();
             }
-        }, 2500);
+        }, 2400);
     }
 
     private void openTmsApp() {
@@ -597,8 +529,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
                     resetFlowFlagsLater();
                     return;
                 }
-            } catch (Exception ignored) {
-            }
+            } catch (Exception ignored) {}
         }
         resetFlowFlagsLater();
     }
@@ -624,16 +555,10 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
     }
 
     private void openTmsAppSettingsFromMissingPermission(String currentPackageName, String screenText) {
-        if (openedAppSettingsForMissingPermission) {
-            return;
-        }
-        if (!containsTmsText(screenText) || !screenText.contains("permission")) {
-            return;
-        }
+        if (openedAppSettingsForMissingPermission) return;
+        if (!containsTmsText(screenText) || !screenText.contains("permission")) return;
         String tmsPackage = resolveTmsPackage(currentPackageName);
-        if (tmsPackage == null) {
-            return;
-        }
+        if (tmsPackage == null) return;
         openedAppSettingsForMissingPermission = true;
         try {
             Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
@@ -641,25 +566,19 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             startActivity(intent);
             markClicked();
-        } catch (Exception ignored) {
-        }
+        } catch (Exception ignored) {}
     }
 
     private String resolveTmsPackage(String currentPackageName) {
         if (currentPackageName != null) {
-            String pkg = currentPackageName.toLowerCase();
-            if (pkg.contains("tms") || pkg.contains("falcon") || pkg.contains("zabka")) {
-                return currentPackageName;
-            }
+            String p = currentPackageName.toLowerCase();
+            if (p.contains("tms") || p.contains("falcon") || p.contains("zabka")) return currentPackageName;
         }
         PackageManager pm = getPackageManager();
         for (String pkg : tmsPackages) {
             try {
-                if (pm.getLaunchIntentForPackage(pkg) != null) {
-                    return pkg;
-                }
-            } catch (Exception ignored) {
-            }
+                if (pm.getLaunchIntentForPackage(pkg) != null) return pkg;
+            } catch (Exception ignored) {}
         }
         return null;
     }
@@ -668,125 +587,39 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         String text = normalize(screenText);
         String permission = normalize(permissionName);
         int deniedIndex = text.indexOf("nie maja dostepu");
-        if (deniedIndex < 0) {
-            deniedIndex = text.indexOf("not allowed");
-        }
-        if (deniedIndex < 0) {
-            return false;
-        }
+        if (deniedIndex < 0) deniedIndex = text.indexOf("not allowed");
+        if (deniedIndex < 0) return false;
         int permissionIndex = text.indexOf(permission, deniedIndex);
         return permissionIndex > deniedIndex;
-    }
-
-    private boolean tapAppInfoPermissionsRow(AccessibilityNodeInfo root) {
-        if (root == null) return false;
-
-        // Najpierw szukamy dokładnego tekstu głównego wiersza: "Uprawnienia".
-        // Nie bierzemy tekstu pomocniczego typu "Brak przyznanych uprawnień".
-        if (tapExactTextRow(root, "Uprawnienia")) return true;
-        if (tapExactTextRow(root, "Permissions")) return true;
-        if (tapExactTextRow(root, "Zezwolenia")) return true;
-
-        return false;
-    }
-
-    private boolean tapExactTextRow(AccessibilityNodeInfo root, String text) {
-        if (root == null || text == null) return false;
-
-        List<AccessibilityNodeInfo> nodes = root.findAccessibilityNodeInfosByText(text);
-        if (nodes == null || nodes.isEmpty()) return false;
-
-        String wanted = normalize(text);
-
-        for (AccessibilityNodeInfo node : nodes) {
-            if (node == null) continue;
-
-            String nodeText = normalize(getNodeVisibleText(node));
-
-            // Dokładne dopasowanie. Dzięki temu nie klikamy np. "Brak przyznanych uprawnień".
-            if (!nodeText.equals(wanted)) continue;
-
-            Rect textRect = new Rect();
-            node.getBoundsInScreen(textRect);
-            if (textRect.isEmpty()) continue;
-
-            // Szukamy klikalnego rodzica wiersza, ale tylko blisko tekstu.
-            AccessibilityNodeInfo row = findSmallClickableParent(node, textRect.centerY());
-            if (row != null) {
-                Rect rowRect = new Rect();
-                row.getBoundsInScreen(rowRect);
-                if (!rowRect.isEmpty()) {
-                    return tapAt(rowRect.centerX(), rowRect.centerY());
-                }
-            }
-
-            // Fallback: klik w lewą połowę ekranu na wysokości tekstu.
-            // To trafia w wiersz "Uprawnienia", a nie w niższy wiersz "Otwieraj domyślnie".
-            Rect rootRect = new Rect();
-            root.getBoundsInScreen(rootRect);
-            int x = rootRect.isEmpty() ? textRect.centerX() : Math.max(textRect.centerX(), rootRect.left + (rootRect.width() / 3));
-            return tapAt(x, textRect.centerY());
-        }
-
-        return false;
-    }
-
-    private AccessibilityNodeInfo findSmallClickableParent(AccessibilityNodeInfo node, int expectedY) {
-        AccessibilityNodeInfo current = node;
-        for (int i = 0; i < 5 && current != null; i++) {
-            Rect rect = new Rect();
-            current.getBoundsInScreen(rect);
-            if (!rect.isEmpty()) {
-                int height = rect.height();
-                boolean looksLikeRow = height > 36 && height < 220 && expectedY >= rect.top && expectedY <= rect.bottom;
-                if (looksLikeRow && current.isClickable() && current.isEnabled()) {
-                    return current;
-                }
-            }
-            current = current.getParent();
-        }
-        return null;
-    }
-
-    private boolean tapTextCenter(AccessibilityNodeInfo root, String text) {
-        if (root == null || text == null) {
-            return false;
-        }
-        List<AccessibilityNodeInfo> nodes = root.findAccessibilityNodeInfosByText(text);
-        if (nodes == null || nodes.isEmpty()) {
-            return false;
-        }
-        String wanted = normalize(text);
-        for (AccessibilityNodeInfo node : nodes) {
-            if (node == null) {
-                continue;
-            }
-            String nodeText = normalize(getNodeVisibleText(node));
-            if (!nodeText.equals(wanted) && !nodeText.contains(wanted)) {
-                continue;
-            }
-            Rect rect = new Rect();
-            node.getBoundsInScreen(rect);
-            if (rect.isEmpty()) {
-                continue;
-            }
-            return tapAt(rect.centerX(), rect.centerY());
-        }
-        return false;
     }
 
     private boolean tapPermissionRowByText(AccessibilityNodeInfo root, String text) {
         return tapTextCenter(root, text);
     }
 
-    private boolean tapAt(int x, int y) {
-        if (x <= 0 || y <= 0) {
-            return false;
+    private boolean tapTextCenter(AccessibilityNodeInfo root, String text) {
+        if (root == null || text == null) return false;
+        List<AccessibilityNodeInfo> nodes = root.findAccessibilityNodeInfosByText(text);
+        if (nodes == null || nodes.isEmpty()) return false;
+        String wanted = normalize(text);
+        for (AccessibilityNodeInfo node : nodes) {
+            if (node == null) continue;
+            String nodeText = normalize(getNodeVisibleText(node));
+            if (!nodeText.equals(wanted) && !nodeText.contains(wanted)) continue;
+            Rect rect = new Rect();
+            node.getBoundsInScreen(rect);
+            if (rect.isEmpty()) continue;
+            return tapAt(rect.centerX(), rect.centerY());
         }
+        return false;
+    }
+
+    private boolean tapAt(int x, int y) {
+        if (x <= 0 || y <= 0) return false;
         try {
             Path path = new Path();
             path.moveTo(x, y);
-            GestureDescription.StrokeDescription stroke = new GestureDescription.StrokeDescription(path, 0, 90);
+            GestureDescription.StrokeDescription stroke = new GestureDescription.StrokeDescription(path, 0, 85);
             GestureDescription gesture = new GestureDescription.Builder().addStroke(stroke).build();
             return dispatchGesture(gesture, null, null);
         } catch (Exception ignored) {
@@ -811,19 +644,13 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
     }
 
     private boolean isTextOptionChecked(AccessibilityNodeInfo root, String text) {
-        if (root == null || text == null) {
-            return false;
-        }
+        if (root == null || text == null) return false;
         List<AccessibilityNodeInfo> nodes = root.findAccessibilityNodeInfosByText(text);
-        if (nodes == null || nodes.isEmpty()) {
-            return false;
-        }
+        if (nodes == null || nodes.isEmpty()) return false;
         for (AccessibilityNodeInfo node : nodes) {
             AccessibilityNodeInfo current = node;
             for (int i = 0; i < 5 && current != null; i++) {
-                if (containsCheckedNode(current)) {
-                    return true;
-                }
+                if (containsCheckedNode(current)) return true;
                 current = current.getParent();
             }
         }
@@ -831,17 +658,9 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
     }
 
     private boolean containsCheckedNode(AccessibilityNodeInfo node) {
-        if (node == null) {
-            return false;
-        }
-        if (node.isChecked()) {
-            return true;
-        }
-        for (int i = 0; i < node.getChildCount(); i++) {
-            if (containsCheckedNode(node.getChild(i))) {
-                return true;
-            }
-        }
+        if (node == null) return false;
+        if (node.isChecked()) return true;
+        for (int i = 0; i < node.getChildCount(); i++) if (containsCheckedNode(node.getChild(i))) return true;
         return false;
     }
 
@@ -850,80 +669,48 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         if (screenText.contains("uzywaj dokladnej lokalizacji") || screenText.contains("precise location")) {
             if (isTextOptionChecked(root, "Używaj dokładnej lokalizacji")
                     || isTextOptionChecked(root, "Uzywaj dokladnej lokalizacji")
-                    || isTextOptionChecked(root, "Precise location")) {
-                return;
-            }
+                    || isTextOptionChecked(root, "Precise location")) return;
             if (clickSwitchNearText(root, "Używaj dokładnej lokalizacji")
                     || clickSwitchNearText(root, "Uzywaj dokladnej lokalizacji")
-                    || clickSwitchNearText(root, "Precise location")) {
-                markClicked();
-            }
+                    || clickSwitchNearText(root, "Precise location")) markClicked();
         }
     }
 
     private boolean clickAnyText(AccessibilityNodeInfo root, List<String> texts) {
-        if (root == null || texts == null) {
-            return false;
-        }
-        for (String text : texts) {
-            if (clickByText(root, text)) {
-                return true;
-            }
-        }
+        if (root == null || texts == null) return false;
+        for (String text : texts) if (clickByText(root, text)) return true;
         return false;
     }
 
     private boolean clickByText(AccessibilityNodeInfo root, String text) {
-        if (root == null || text == null) {
-            return false;
-        }
+        if (root == null || text == null) return false;
         List<AccessibilityNodeInfo> nodes = root.findAccessibilityNodeInfosByText(text);
-        if (nodes == null || nodes.isEmpty()) {
-            return false;
-        }
+        if (nodes == null || nodes.isEmpty()) return false;
         String wanted = normalize(text);
         for (AccessibilityNodeInfo node : nodes) {
-            if (node == null) {
-                continue;
-            }
+            if (node == null) continue;
             String nodeText = normalize(getNodeVisibleText(node));
-            if (isDangerousText(nodeText)) {
-                continue;
-            }
+            if (isDangerousText(nodeText)) continue;
             boolean exact = nodeText.equals(wanted);
             boolean contains = wanted.length() >= 8 && nodeText.contains(wanted) && !isDangerousText(nodeText);
-            if (!exact && !contains) {
-                continue;
-            }
+            if (!exact && !contains) continue;
             AccessibilityNodeInfo clickableNode = findClickableParentSafe(node);
-            if (clickableNode != null && clickableNode.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
-                return true;
-            }
+            if (clickableNode != null && clickableNode.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true;
         }
         return false;
     }
 
-    private boolean clickByTextForUninstall(AccessibilityNodeInfo root, String text) {
-        if (root == null || text == null) {
-            return false;
-        }
+    private boolean clickByTextAllowDanger(AccessibilityNodeInfo root, String text) {
+        if (root == null || text == null) return false;
         List<AccessibilityNodeInfo> nodes = root.findAccessibilityNodeInfosByText(text);
-        if (nodes == null || nodes.isEmpty()) {
-            return false;
-        }
+        if (nodes == null || nodes.isEmpty()) return false;
         String wanted = normalize(text);
         for (AccessibilityNodeInfo node : nodes) {
-            if (node == null) {
-                continue;
-            }
+            if (node == null) continue;
             String nodeText = normalize(getNodeVisibleText(node));
-            if (!nodeText.equals(wanted) && !nodeText.contains(wanted)) {
-                continue;
-            }
+            if (!nodeText.equals(wanted) && !nodeText.contains(wanted)) continue;
             AccessibilityNodeInfo clickableNode = findClickableParentForUninstall(node);
-            if (clickableNode != null && clickableNode.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
-                return true;
-            }
+            if (clickableNode != null && clickableNode.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true;
         }
         return false;
     }
@@ -932,12 +719,8 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         AccessibilityNodeInfo current = node;
         while (current != null) {
             String fullText = normalize(collectText(current));
-            if (isBlockedAdminScreen(fullText) || isDangerousText(fullText)) {
-                return null;
-            }
-            if (current.isClickable() && current.isEnabled()) {
-                return current;
-            }
+            if (isBlockedAdminScreen(fullText) || isDangerousText(fullText)) return null;
+            if (current.isClickable() && current.isEnabled()) return current;
             current = current.getParent();
         }
         return null;
@@ -947,31 +730,21 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         AccessibilityNodeInfo current = node;
         while (current != null) {
             String fullText = normalize(collectText(current));
-            if (isBlockedAdminScreen(fullText)) {
-                return null;
-            }
-            if (current.isClickable() && current.isEnabled()) {
-                return current;
-            }
+            if (isBlockedAdminScreen(fullText)) return null;
+            if (current.isClickable() && current.isEnabled()) return current;
             current = current.getParent();
         }
         return null;
     }
 
     private boolean clickSwitchNearText(AccessibilityNodeInfo root, String text) {
-        if (root == null || text == null) {
-            return false;
-        }
+        if (root == null || text == null) return false;
         List<AccessibilityNodeInfo> nodes = root.findAccessibilityNodeInfosByText(text);
-        if (nodes == null || nodes.isEmpty()) {
-            return false;
-        }
+        if (nodes == null || nodes.isEmpty()) return false;
         for (AccessibilityNodeInfo node : nodes) {
             AccessibilityNodeInfo parent = node;
             for (int i = 0; i < 5 && parent != null; i++) {
-                if (clickFirstSwitchOrClickableChild(parent)) {
-                    return true;
-                }
+                if (clickFirstSwitchOrClickableChild(parent)) return true;
                 parent = parent.getParent();
             }
         }
@@ -979,50 +752,29 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
     }
 
     private boolean clickFirstSwitchOrClickableChild(AccessibilityNodeInfo node) {
-        if (node == null) {
-            return false;
-        }
+        if (node == null) return false;
         String wholeNodeText = normalize(collectText(node));
-        if (isBlockedAdminScreen(wholeNodeText) || isDangerousText(wholeNodeText)) {
-            return false;
-        }
+        if (isBlockedAdminScreen(wholeNodeText) || isDangerousText(wholeNodeText)) return false;
         CharSequence className = node.getClassName();
         if (className != null) {
             String cls = className.toString().toLowerCase();
-            if ((cls.contains("switch") || cls.contains("checkbox")) && node.isEnabled() && node.isClickable() && !node.isChecked()) {
-                return node.performAction(AccessibilityNodeInfo.ACTION_CLICK);
-            }
+            if ((cls.contains("switch") || cls.contains("checkbox")) && node.isEnabled() && node.isClickable() && !node.isChecked()) return node.performAction(AccessibilityNodeInfo.ACTION_CLICK);
         }
         if (node.isClickable() && node.isEnabled()) {
             String nodeText = normalize(getNodeVisibleText(node));
-            if (nodeText.contains("doklad")
-                    || nodeText.contains("precise")
-                    || nodeText.contains("powiadom")
-                    || nodeText.contains("notification")) {
-                return node.performAction(AccessibilityNodeInfo.ACTION_CLICK);
-            }
+            if (nodeText.contains("doklad") || nodeText.contains("precise") || nodeText.contains("powiadom") || nodeText.contains("notification")) return node.performAction(AccessibilityNodeInfo.ACTION_CLICK);
         }
-        for (int i = 0; i < node.getChildCount(); i++) {
-            if (clickFirstSwitchOrClickableChild(node.getChild(i))) {
-                return true;
-            }
-        }
+        for (int i = 0; i < node.getChildCount(); i++) if (clickFirstSwitchOrClickableChild(node.getChild(i))) return true;
         return false;
     }
 
     private String getNodeVisibleText(AccessibilityNodeInfo node) {
-        if (node == null) {
-            return "";
-        }
+        if (node == null) return "";
         StringBuilder builder = new StringBuilder();
         CharSequence text = node.getText();
         CharSequence description = node.getContentDescription();
-        if (text != null) {
-            builder.append(text).append(" ");
-        }
-        if (description != null) {
-            builder.append(description).append(" ");
-        }
+        if (text != null) builder.append(text).append(" ");
+        if (description != null) builder.append(description).append(" ");
         return builder.toString().trim();
     }
 
@@ -1041,36 +793,20 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
     }
 
     private void collectTextRecursive(AccessibilityNodeInfo node, StringBuilder builder) {
-        if (node == null) {
-            return;
-        }
+        if (node == null) return;
         CharSequence text = node.getText();
-        if (text != null) {
-            builder.append(text).append(" ");
-        }
+        if (text != null) builder.append(text).append(" ");
         CharSequence description = node.getContentDescription();
-        if (description != null) {
-            builder.append(description).append(" ");
-        }
-        for (int i = 0; i < node.getChildCount(); i++) {
-            collectTextRecursive(node.getChild(i), builder);
-        }
+        if (description != null) builder.append(description).append(" ");
+        for (int i = 0; i < node.getChildCount(); i++) collectTextRecursive(node.getChild(i), builder);
     }
 
     private String collectEventText(AccessibilityEvent event) {
-        if (event == null || event.getText() == null) {
-            return "";
-        }
+        if (event == null || event.getText() == null) return "";
         StringBuilder builder = new StringBuilder();
-        for (CharSequence text : event.getText()) {
-            if (text != null) {
-                builder.append(text).append(" ");
-            }
-        }
+        for (CharSequence text : event.getText()) if (text != null) builder.append(text).append(" ");
         CharSequence description = event.getContentDescription();
-        if (description != null) {
-            builder.append(description).append(" ");
-        }
+        if (description != null) builder.append(description).append(" ");
         return builder.toString();
     }
 
@@ -1105,29 +841,19 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
 
     private boolean containsTmsText(String text) {
         String value = normalize(text);
-        return value.contains("zabka")
-                || value.contains("tms")
-                || value.contains("tmsfalcon")
-                || value.contains("falcon");
+        return value.contains("zabka") || value.contains("tms") || value.contains("tmsfalcon") || value.contains("falcon");
     }
 
     private void updateOverlayVisibility() {
-        if (isAutomationRunning()) {
-            showAutomationOverlay();
-        } else {
-            hideAutomationOverlay();
-        }
+        if (isAutomationRunning()) showAutomationOverlay();
+        else hideAutomationOverlay();
     }
 
     private void showAutomationOverlay() {
-        if (automationOverlayView != null) {
-            return;
-        }
+        if (automationOverlayView != null) return;
         try {
             overlayWindowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
-            if (overlayWindowManager == null) {
-                return;
-            }
+            if (overlayWindowManager == null) return;
 
             FrameLayout root = new FrameLayout(this);
             root.setBackgroundColor(Color.argb(210, 0, 0, 0));
@@ -1141,10 +867,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
             message.setGravity(Gravity.CENTER);
             message.setPadding(36, 36, 36, 36);
 
-            FrameLayout.LayoutParams msgParams = new FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.MATCH_PARENT,
-                    FrameLayout.LayoutParams.WRAP_CONTENT
-            );
+            FrameLayout.LayoutParams msgParams = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT);
             msgParams.gravity = Gravity.CENTER;
             root.addView(message, msgParams);
 
@@ -1152,13 +875,10 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
                     WindowManager.LayoutParams.MATCH_PARENT,
                     WindowManager.LayoutParams.MATCH_PARENT,
                     WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-                            | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
-                            | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
                     PixelFormat.TRANSLUCENT
             );
             params.gravity = Gravity.CENTER;
-
             overlayWindowManager.addView(root, params);
             automationOverlayView = root;
         } catch (Exception ignored) {
@@ -1168,20 +888,13 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
 
     private void hideAutomationOverlay() {
         try {
-            if (overlayWindowManager != null && automationOverlayView != null) {
-                overlayWindowManager.removeView(automationOverlayView);
-            }
-        } catch (Exception ignored) {
-        }
+            if (overlayWindowManager != null && automationOverlayView != null) overlayWindowManager.removeView(automationOverlayView);
+        } catch (Exception ignored) {}
         automationOverlayView = null;
     }
 
     private boolean isAutomationRunning() {
-        return isMode(MODE_FULL_REPAIR)
-                || isMode(MODE_UNINSTALL_TMS)
-                || isMode(MODE_INSTALL_TMS)
-                || isMode(MODE_GRANT_TMS_PERMISSIONS)
-                || isMode(MODE_OPEN_TMS);
+        return isMode(MODE_FULL_REPAIR) || isMode(MODE_UNINSTALL_TMS) || isMode(MODE_INSTALL_TMS) || isMode(MODE_GRANT_TMS_PERMISSIONS) || isMode(MODE_OPEN_TMS);
     }
 
     private String getFlowMode() {
@@ -1205,9 +918,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
     }
 
     private boolean canHandleTmsPermissions() {
-        return isMode(MODE_FULL_REPAIR)
-                || isMode(MODE_GRANT_TMS_PERMISSIONS)
-                || isMode(MODE_OPEN_TMS);
+        return isMode(MODE_FULL_REPAIR) || isMode(MODE_GRANT_TMS_PERMISSIONS) || isMode(MODE_OPEN_TMS);
     }
 
     private boolean isDetailsOnlyMode() {
@@ -1219,9 +930,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
     }
 
     private String normalize(String text) {
-        if (text == null) {
-            return "";
-        }
+        if (text == null) return "";
         return text.toLowerCase()
                 .replace("ą", "a")
                 .replace("ć", "c")
