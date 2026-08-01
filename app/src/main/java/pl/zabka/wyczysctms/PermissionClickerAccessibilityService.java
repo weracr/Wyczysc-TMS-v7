@@ -485,7 +485,8 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
             }
         }
 
-        finishPermissionFlowWithMessage();
+        // Jeżeli nie ma już pozycji w sekcji "Nie mają dostępu", kończymy flow.
+        finishPermissionFlowAndCloseSettings();
     }
 
     private boolean isCameraPermissionScreen(String packageName, String screenText) {
@@ -623,6 +624,23 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         performGlobalAction(GLOBAL_ACTION_BACK);
     }
 
+    private void finishPermissionFlowAndCloseSettings() {
+        if (finalToastShown) return;
+        finalToastShown = true;
+
+        setFlowMode(MODE_IDLE);
+        hideAutomationOverlay();
+
+        try {
+            Toast.makeText(this, "Gotowe. Można uruchomić aplikację TMS.", Toast.LENGTH_LONG).show();
+        } catch (Exception ignored) {
+        }
+
+        // Zamykamy ekran ustawień/uprawnień. HOME jest stabilniejsze niż kilka cofnięć,
+        // bo ustawienia Androida potrafią mieć różną głębokość ekranów na PM90/PM95.
+        handler.postDelayed(() -> performGlobalAction(GLOBAL_ACTION_HOME), 300);
+    }
+
     private void openTmsAppAndFinishPermissionFlow() {
         openTmsApp();
         handler.postDelayed(() -> {
@@ -696,6 +714,11 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
             } catch (Exception ignored) {}
         }
         return null;
+    }
+
+    private boolean hasDeniedPermissionsSection(String screenText) {
+        String text = normalize(screenText);
+        return text.contains("nie maja dostepu") || text.contains("not allowed");
     }
 
     private boolean isPermissionInDeniedSection(String screenText, String permissionName) {
