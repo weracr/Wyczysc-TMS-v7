@@ -2,6 +2,7 @@ package pl.zabka.wyczysctms;
 
 import android.accessibilityservice.AccessibilityService;
 import android.widget.FrameLayout;
+import android.widget.LinearLayout;
 import android.widget.Button;
 import android.graphics.drawable.ColorDrawable;
 import android.accessibilityservice.GestureDescription;
