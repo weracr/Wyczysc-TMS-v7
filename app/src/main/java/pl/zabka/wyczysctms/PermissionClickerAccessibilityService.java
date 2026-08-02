@@ -149,18 +149,8 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
             return;
         }
 
-        if (isDefaultOpenScreen(packageName, screenText)) {
-            goBackFromWrongScreen();
-            return;
-        }
-
         if (isTmsAppInfoScreen(packageName, screenText)) {
             clickAppInfoPermissions(root);
-            return;
-        }
-
-        if (isAppPermissionsListScreen(packageName, screenText)) {
-            handlePermissionsList(root, screenText);
             return;
         }
 
@@ -174,11 +164,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
             return;
         }
 
-        if (isTmsLocationPopup(screenText)) {
-            clickTmsPermissionInfo(root);
-            return;
-        }
-
+        // Szczegóły konkretnego uprawnienia muszą być przed listą Uprawnienia aplikacji.
         if (isCameraPermissionScreen(packageName, screenText)) {
             handleCameraScreen(root);
             return;
@@ -196,6 +182,16 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
 
         if (isGenericPermissionScreen(packageName, screenText)) {
             handleGenericPermissionScreen(root);
+            return;
+        }
+
+        if (isAppPermissionsListScreen(packageName, screenText)) {
+            handlePermissionsList(root, screenText);
+            return;
+        }
+
+        if (isTmsLocationPopup(screenText)) {
+            clickTmsPermissionInfo(root);
             return;
         }
 
@@ -542,37 +538,54 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
     }
 
     private boolean isAppPermissionsListScreen(String packageName, String screenText) {
+        String text = normalize(screenText);
         return packageName.contains("settings")
-                && containsTmsText(screenText)
-                && (screenText.contains("uprawnienia aplikacji")
-                || screenText.contains("app permissions")
-                || screenText.contains("maja dostep")
-                || screenText.contains("nie maja dostepu")
-                || screenText.contains("allowed")
-                || screenText.contains("not allowed"));
+                && containsTmsText(text)
+                && (text.contains("uprawnienia aplikacji")
+                || text.contains("app permissions")
+                || text.contains("maja dostep")
+                || text.contains("nie maja dostepu")
+                || text.contains("dozwolone")
+                || text.contains("niedozwolone")
+                || text.contains("nie zezwolono")
+                || text.contains("brak dostepu")
+                || text.contains("allowed")
+                || text.contains("not allowed"));
     }
 
     private void handlePermissionsList(AccessibilityNodeInfo root, String screenText) {
         if (!canClickNow()) return;
 
-        String text = normalize(screenText);
-
+        // Najpierw klikamy pozycje wykryte pod nagłówkiem sekcji odmówionych.
         for (String permission : permissionRows) {
-            if (isPermissionInDeniedSection(screenText, permission)) {
-                if (tapPermissionRowByText(root, permission)) {
-                    markClicked();
-                    return;
-                }
+            if (isPermissionInDeniedSection(screenText, permission)
+                    && tapPermissionRowByText(root, permission)) {
+                markClicked();
+                return;
             }
         }
 
+        // Fallback dla wersji Ustawień bez czytelnego nagłówka sekcji.
+        // Klikamy pierwszy wymagany wiersz, który jest widoczny i nie wygląda na już zaznaczony.
+        for (String permission : permissionRows) {
+            if (tapVisibleUncheckedPermissionRow(root, permission)) {
+                markClicked();
+                return;
+            }
+        }
+
+        String text = normalize(screenText);
         boolean definitelyPermissionList = text.contains("uprawnienia aplikacji")
                 || text.contains("app permissions")
                 || text.contains("maja dostep")
+                || text.contains("dozwolone")
                 || text.contains("allowed");
 
         boolean stillHasDeniedSection = text.contains("nie maja dostepu")
-                || text.contains("not allowed");
+                || text.contains("not allowed")
+                || text.contains("niedozwolone")
+                || text.contains("nie zezwolono")
+                || text.contains("brak dostepu");
 
         if (definitelyPermissionList && !stillHasDeniedSection) {
             finishPermissionFlowAndCloseSettings();
@@ -809,15 +822,103 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
     private boolean isPermissionInDeniedSection(String screenText, String permissionName) {
         String text = normalize(screenText);
         String permission = normalize(permissionName);
-        int deniedIndex = text.indexOf("nie maja dostepu");
-        if (deniedIndex < 0) deniedIndex = text.indexOf("not allowed");
+
+        String[] deniedHeaders = new String[] {
+                "nie maja dostepu",
+                "not allowed",
+                "niedozwolone",
+                "nie zezwolono",
+                "brak dostepu"
+        };
+
+        int deniedIndex = -1;
+        for (String header : deniedHeaders) {
+            int idx = text.indexOf(header);
+            if (idx >= 0 && (deniedIndex < 0 || idx < deniedIndex)) {
+                deniedIndex = idx;
+            }
+        }
+
         if (deniedIndex < 0) return false;
-        int permissionIndex = text.indexOf(permission, deniedIndex);
-        return permissionIndex > deniedIndex;
+        return text.indexOf(permission, deniedIndex) > deniedIndex;
     }
 
     private boolean tapPermissionRowByText(AccessibilityNodeInfo root, String text) {
-        return tapTextCenter(root, text);
+        if (root == null || text == null) return false;
+        List<AccessibilityNodeInfo> nodes = root.findAccessibilityNodeInfosByText(text);
+        if (nodes == null || nodes.isEmpty()) return false;
+
+        String wanted = normalize(text);
+        for (AccessibilityNodeInfo node : nodes) {
+            if (node == null) continue;
+            String visible = normalize(getNodeVisibleText(node));
+            if (!visible.equals(wanted) && !visible.contains(wanted)) continue;
+
+            AccessibilityNodeInfo row = findPermissionClickableParent(node);
+            if (row != null && row.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                return true;
+            }
+
+            Rect rect = new Rect();
+            node.getBoundsInScreen(rect);
+            if (!rect.isEmpty() && tapAt(rect.centerX(), rect.centerY())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private AccessibilityNodeInfo findPermissionClickableParent(AccessibilityNodeInfo node) {
+        AccessibilityNodeInfo current = node;
+        for (int i = 0; i < 7 && current != null; i++) {
+            Rect rect = new Rect();
+            current.getBoundsInScreen(rect);
+            String text = normalize(collectText(current));
+
+            boolean wrongRow = text.contains("otwieraj domyslnie")
+                    || text.contains("open by default")
+                    || text.contains("wyczysc dane")
+                    || text.contains("odinstaluj");
+
+            if (!wrongRow
+                    && !rect.isEmpty()
+                    && rect.height() >= 35
+                    && rect.height() <= 300
+                    && current.isEnabled()
+                    && current.isClickable()) {
+                return current;
+            }
+            current = current.getParent();
+        }
+        return null;
+    }
+
+    private boolean tapVisibleUncheckedPermissionRow(AccessibilityNodeInfo root, String permission) {
+        if (root == null || permission == null) return false;
+        List<AccessibilityNodeInfo> nodes = root.findAccessibilityNodeInfosByText(permission);
+        if (nodes == null || nodes.isEmpty()) return false;
+
+        String wanted = normalize(permission);
+        for (AccessibilityNodeInfo node : nodes) {
+            if (node == null) continue;
+            String visible = normalize(getNodeVisibleText(node));
+            if (!visible.equals(wanted) && !visible.contains(wanted)) continue;
+
+            AccessibilityNodeInfo row = findPermissionClickableParent(node);
+            if (row == null) continue;
+
+            String rowText = normalize(collectText(row));
+            boolean alreadyAllowed = rowText.contains("dozwolone")
+                    || rowText.contains("zezwolono")
+                    || rowText.contains("allowed")
+                    || rowText.contains("zawsze zezwalaj")
+                    || rowText.contains("podczas uzywania");
+
+            if (!alreadyAllowed && row.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private boolean tapTextCenter(AccessibilityNodeInfo root, String text) {
