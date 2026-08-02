@@ -278,22 +278,18 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
                 || packageName.contains("packageinstaller")
                 || packageName.contains("android")
                 || packageName.contains("settings");
-
         boolean warningText = screenText.contains("starszej wersji androida")
                 || screenText.contains("older version of android")
-                || screenText.contains("dostep do zdjec i filmow")
-                || screenText.contains("dostęp do zdjęć i filmów")
+                || screenText.contains("dostep do zdjec")
+                || screenText.contains("dostęp do zdjęć")
                 || screenText.contains("dostep do muzyki")
                 || screenText.contains("dostęp do muzyki")
-                || screenText.contains("dostep do zdjec i filmow rowniez bedzie mozliwy")
-                || screenText.contains("również będzie możliwy")
-                || screenText.contains("rowniez bedzie mozliwy");
-
+                || screenText.contains("rowniez bedzie mozliwy")
+                || screenText.contains("również będzie możliwy");
         boolean confirmButton = screenText.contains("potwierdz")
                 || screenText.contains("potwierdź")
                 || screenText.contains("confirm")
                 || screenText.contains("ok");
-
         return systemDialog && warningText && confirmButton;
     }
 
@@ -385,9 +381,38 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         if (now - lastAppInfoTapTime < 900) return;
         lastAppInfoTapTime = now;
 
-        if (tapAppInfoPermissionsRow(root)) {
+        if (tapExactVisibleText(root, "Uprawnienia")
+                || tapExactVisibleText(root, "Permissions")
+                || tapExactVisibleText(root, "Zezwolenia")
+                || tapContainsVisibleText(root, "Brak przyznanych uprawnień")
+                || tapContainsVisibleText(root, "Brak przyznanych uprawnien")
+                || tapContainsVisibleText(root, "No permissions granted")) {
             markClicked();
         }
+    }
+
+    private boolean tapExactVisibleText(AccessibilityNodeInfo root, String wantedText) {
+        if (root == null || wantedText == null) return false;
+        List<AccessibilityNodeInfo> nodes = new ArrayList<>();
+        collectExactNodes(root, normalize(wantedText), nodes);
+        for (AccessibilityNodeInfo node : nodes) {
+            Rect rect = new Rect();
+            node.getBoundsInScreen(rect);
+            if (!rect.isEmpty()) return tapAt(rect.centerX(), rect.centerY());
+        }
+        return false;
+    }
+
+    private boolean tapContainsVisibleText(AccessibilityNodeInfo root, String wantedPart) {
+        if (root == null || wantedPart == null) return false;
+        List<AccessibilityNodeInfo> nodes = new ArrayList<>();
+        collectContainsNodes(root, normalize(wantedPart), nodes);
+        for (AccessibilityNodeInfo node : nodes) {
+            Rect rect = new Rect();
+            node.getBoundsInScreen(rect);
+            if (!rect.isEmpty()) return tapAt(rect.centerX(), rect.centerY());
+        }
+        return false;
     }
 
     private boolean tapAppInfoPermissionsRow(AccessibilityNodeInfo root) {
@@ -560,14 +585,12 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
 
     private void handleLocationScreen(AccessibilityNodeInfo root) {
         if (!canClickNow()) return;
-
         if (isAlwaysLocationAlreadyChecked(root)) {
             enablePreciseLocationIfVisible(root);
             markClicked();
             goBackToPermissionsListLater();
             return;
         }
-
         if (clickAnyText(root, alwaysLocationButtons)
                 || tapTextCenter(root, "Zawsze zezwalaj")
                 || tapTextCenter(root, "Zezwalaj cały czas")
@@ -650,10 +673,6 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         String pkg = resolveTmsPackage(null);
         if (pkg == null) return;
 
-        if (openTmsPermissionSettingsDirect(pkg)) {
-            return;
-        }
-
         try {
             Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
             intent.setData(Uri.parse("package:" + pkg));
@@ -662,30 +681,6 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
             startActivity(intent);
         } catch (Exception ignored) {
         }
-    }
-
-    private boolean openTmsPermissionSettingsDirect(String pkg) {
-        Intent[] intents = new Intent[] {
-                new Intent("android.settings.APP_PERMISSION_SETTINGS"),
-                new Intent("android.settings.APPLICATION_PERMISSIONS_SETTINGS"),
-                new Intent("android.settings.MANAGE_APP_PERMISSIONS")
-        };
-
-        for (Intent intent : intents) {
-            try {
-                intent.putExtra("android.provider.extra.APP_PACKAGE", pkg);
-                intent.putExtra("android.intent.extra.PACKAGE_NAME", pkg);
-                intent.putExtra("package", pkg);
-                intent.setData(Uri.parse("package:" + pkg));
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
-                startActivity(intent);
-                return true;
-            } catch (Exception ignored) {
-            }
-        }
-
-        return false;
     }
 
     private void finishPermissionFlowWithMessage() {
@@ -705,15 +700,12 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
     private void finishPermissionFlowAndCloseSettings() {
         if (finalToastShown) return;
         finalToastShown = true;
-
         setFlowMode(MODE_IDLE);
         hideAutomationOverlay();
-
         try {
-            android.widget.Toast.makeText(this, "Gotowe. Można uruchomić aplikację TMS.", android.widget.Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "Gotowe. Można uruchomić aplikację TMS.", Toast.LENGTH_LONG).show();
         } catch (Exception ignored) {
         }
-
         handler.postDelayed(() -> performGlobalAction(GLOBAL_ACTION_BACK), 300);
         handler.postDelayed(() -> performGlobalAction(GLOBAL_ACTION_BACK), 900);
     }
@@ -1060,12 +1052,10 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
     }
 
     private void updateOverlayVisibility() {
-        // Overlay/blokada tymczasowo wyłączone podczas testów automatyzacji.
         hideAutomationOverlay();
     }
 
     private void showAutomationOverlay() {
-        // Overlay/blokada tymczasowo wyłączone podczas testów automatyzacji.
         hideAutomationOverlay();
     }
 
