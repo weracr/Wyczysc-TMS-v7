@@ -30,7 +30,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
     private WindowManager overlayWindowManager;
     private View automationOverlayView;
 
-    private static final long CLICK_DELAY_MS = 850;
+    private static final long CLICK_DELAY_MS = 700;
     private static final long BACK_DELAY_MS = 850;
 
     private static final String PREFS_NAME = "wyczysctms_prefs";
@@ -51,6 +51,9 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
     private long lastAppInfoTapTime = 0;
     private boolean openedAppSettingsForMissingPermission = false;
     private boolean finalToastShown = false;
+    private boolean waitingForAlwaysLocation = false;
+    private long lastRuntimePermissionActionTime = 0;
+    private int runtimePermissionsClicked = 0;
 
     private final List<String> tmsPackages = Arrays.asList(
             "pl.optidata.tms_android_2017",
@@ -144,16 +147,6 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         if (isBlockedAdminScreen(screenText)) return;
         if (!canHandleTmsPermissions()) return;
 
-        if (isDefaultOpenScreen(packageName, screenText)) {
-            goBackFromWrongScreen();
-            return;
-        }
-
-        if (isTmsAppInfoScreen(packageName, screenText)) {
-            clickAppInfoPermissions(root);
-            return;
-        }
-
         if (isLegacyPermissionWarningDialog(packageName, screenText)) {
             clickLegacyPermissionConfirm(root);
             return;
@@ -164,34 +157,13 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
             return;
         }
 
-        // Szczegóły konkretnego uprawnienia muszą być przed listą Uprawnienia aplikacji.
-        if (isCameraPermissionScreen(packageName, screenText)) {
-            handleCameraScreen(root);
-            return;
-        }
-
-        if (isLocationPermissionScreen(packageName, screenText)) {
-            handleLocationScreen(root);
-            return;
-        }
-
-        if (isNotificationPermissionScreen(packageName, screenText)) {
-            handleNotificationScreen(root);
-            return;
-        }
-
-        if (isGenericPermissionScreen(packageName, screenText)) {
-            handleGenericPermissionScreen(root);
-            return;
-        }
-
-        if (isAppPermissionsListScreen(packageName, screenText)) {
-            handlePermissionsList(root, screenText);
-            return;
-        }
-
         if (isTmsLocationPopup(screenText)) {
             clickTmsPermissionInfo(root);
+            return;
+        }
+
+        if (waitingForAlwaysLocation && isLocationPermissionScreen(packageName, screenText)) {
+            handleLocationScreen(root);
             return;
         }
 
@@ -307,60 +279,103 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
 
     private void clickLegacyPermissionConfirm(AccessibilityNodeInfo root) {
         if (!canClickNow()) return;
-
         if (clickByTextAllowDanger(root, "Potwierdź")
                 || clickByTextAllowDanger(root, "Potwierdz")
                 || clickByTextAllowDanger(root, "Confirm")
                 || clickByTextAllowDanger(root, "OK")
                 || clickByTextAllowDanger(root, "Ok")) {
             markClicked();
+            lastRuntimePermissionActionTime = System.currentTimeMillis();
+            runtimePermissionsClicked++;
+            scheduleRuntimeFlowFinishCheck();
         }
     }
 
     private boolean isRuntimePermissionDialog(String packageName, String screenText) {
-        boolean permissionController = packageName.contains("permissioncontroller")
+        String text = normalize(screenText);
+        boolean controller = packageName.contains("permissioncontroller")
                 || packageName.contains("packageinstaller");
-
-        boolean actualDialogChoice = screenText.contains("podczas uzywania")
-                || screenText.contains("while using")
-                || screenText.contains("zezwol tylko")
-                || screenText.contains("allow only")
-                || screenText.contains("nie zezwalaj")
-                || screenText.contains("dont allow")
-                || screenText.contains("don't allow");
-
-        return permissionController && actualDialogChoice && containsTmsText(screenText);
+        boolean dialogChoice = text.contains("podczas uzywania aplikacji")
+                || text.contains("tylko tym razem")
+                || text.contains("nie zezwalaj")
+                || text.contains("while using the app")
+                || text.contains("only this time")
+                || text.contains("dont allow")
+                || text.contains("don't allow")
+                || text.contains("zezwol")
+                || text.contains("allow");
+        return controller && dialogChoice;
     }
 
     private void handleRuntimePermissionDialog(AccessibilityNodeInfo root, String screenText) {
         if (!canClickNow()) return;
-        if ((screenText.contains("aparat") || screenText.contains("camera") || screenText.contains("lokalizacja") || screenText.contains("location"))
-                && clickAnyText(root, whileUsingButtons)) {
-            markClicked();
-            return;
+
+        String text = normalize(screenText);
+        boolean clicked;
+
+        // Aparat i pierwsza zgoda lokalizacji: dokładnie "Podczas używania aplikacji".
+        if (text.contains("aparat") || text.contains("camera")
+                || text.contains("lokalizacja") || text.contains("location")) {
+            clicked = clickByTextAllowDanger(root, "Podczas używania aplikacji")
+                    || clickByTextAllowDanger(root, "Podczas uzywania aplikacji")
+                    || clickByTextAllowDanger(root, "While using the app")
+                    || clickAnyText(root, whileUsingButtons);
+        } else {
+            // Kontakty, urządzenia w pobliżu, telefon, zdjęcia/filmy/muzyka/dźwięk.
+            clicked = clickByTextAllowDanger(root, "Zezwól")
+                    || clickByTextAllowDanger(root, "Zezwol")
+                    || clickByTextAllowDanger(root, "Zezwalaj")
+                    || clickByTextAllowDanger(root, "Allow")
+                    || clickAnyText(root, allowButtons);
         }
-        if (clickAnyText(root, allowButtons)) markClicked();
+
+        if (clicked) {
+            markClicked();
+            lastRuntimePermissionActionTime = System.currentTimeMillis();
+            runtimePermissionsClicked++;
+            scheduleRuntimeFlowFinishCheck();
+        }
+    }
+
+    private void scheduleRuntimeFlowFinishCheck() {
+        handler.postDelayed(() -> {
+            if (!isMode(MODE_OPEN_TMS)) return;
+            if (waitingForAlwaysLocation) return;
+
+            long quietFor = System.currentTimeMillis() - lastRuntimePermissionActionTime;
+            if (runtimePermissionsClicked > 0 && quietFor >= 4500) {
+                setFlowMode(MODE_IDLE);
+                hideAutomationOverlay();
+                Toast.makeText(this, "Gotowe. Uprawnienia TMS zostały nadane.", Toast.LENGTH_LONG).show();
+            }
+        }, 5000);
     }
 
     private boolean isTmsLocationPopup(String text) {
-        return containsTmsText(text)
-                && (text.contains("dostep do lokalizacji")
-                || text.contains("zaktualizuj ustawienia")
-                || text.contains("aktualizuj ustawienia")
-                || text.contains("location access")
-                || text.contains("update settings"));
+        String value = normalize(text);
+        return containsTmsText(value)
+                && (value.contains("dostep do lokalizacji")
+                || value.contains("zaktualizuj ustawienia")
+                || value.contains("aktualizuj ustawienia")
+                || value.contains("location access")
+                || value.contains("update settings"));
     }
 
     private boolean clickTmsPermissionInfo(AccessibilityNodeInfo root) {
         if (!canClickNow()) return false;
-        boolean clicked = clickByText(root, "ZAKTUALIZUJ USTAWIENIA")
-                || clickByText(root, "Zaktualizuj ustawienia")
-                || clickByText(root, "AKTUALIZUJ USTAWIENIA")
-                || clickByText(root, "Aktualizuj ustawienia")
-                || clickByText(root, "Ustawienia")
-                || clickByText(root, "Settings")
-                || clickByText(root, "Update settings");
-        if (clicked) markClicked();
+
+        boolean clicked = clickByTextAllowDanger(root, "ZAKTUALIZUJ USTAWIENIA")
+                || clickByTextAllowDanger(root, "Zaktualizuj ustawienia")
+                || clickByTextAllowDanger(root, "AKTUALIZUJ USTAWIENIA")
+                || clickByTextAllowDanger(root, "Aktualizuj ustawienia")
+                || clickByTextAllowDanger(root, "UPDATE SETTINGS")
+                || clickByTextAllowDanger(root, "Update settings");
+
+        if (clicked) {
+            waitingForAlwaysLocation = true;
+            markClicked();
+            lastRuntimePermissionActionTime = System.currentTimeMillis();
+        }
         return clicked;
     }
 
@@ -607,32 +622,51 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
     }
 
     private boolean isLocationPermissionScreen(String packageName, String screenText) {
+        String text = normalize(screenText);
         return packageName.contains("settings")
-                && containsTmsText(screenText)
-                && (screenText.contains("lokalizacja") || screenText.contains("location") || screenText.contains("zawsze zezwalaj") || screenText.contains("allow all the time") || screenText.contains("precise location"));
+                && (text.contains("lokalizacja - dostep")
+                || text.contains("location access")
+                || text.contains("zawsze zezwalaj")
+                || text.contains("allow all the time"));
     }
 
     private void handleLocationScreen(AccessibilityNodeInfo root) {
         if (!canClickNow()) return;
+
         if (isAlwaysLocationAlreadyChecked(root)) {
             enablePreciseLocationIfVisible(root);
-            markClicked();
-            goBackToPermissionsListLater();
+            finishAlwaysLocationAndReturnToTms();
             return;
         }
-        if (clickAnyText(root, alwaysLocationButtons)
+
+        boolean clicked = clickByTextAllowDanger(root, "Zawsze zezwalaj")
+                || clickByTextAllowDanger(root, "Zezwalaj cały czas")
+                || clickByTextAllowDanger(root, "Zezwalaj caly czas")
+                || clickByTextAllowDanger(root, "Allow all the time")
+                || clickByTextAllowDanger(root, "Always allow")
                 || tapTextCenter(root, "Zawsze zezwalaj")
-                || tapTextCenter(root, "Zezwalaj cały czas")
-                || tapTextCenter(root, "Zezwalaj caly czas")
-                || tapTextCenter(root, "Allow all the time")
-                || tapTextCenter(root, "Always allow")) {
+                || tapTextCenter(root, "Allow all the time");
+
+        if (clicked) {
             markClicked();
+            lastRuntimePermissionActionTime = System.currentTimeMillis();
             handler.postDelayed(() -> {
-                AccessibilityNodeInfo r = getRootInActiveWindow();
-                if (r != null) enablePreciseLocationIfVisible(r);
-            }, 650);
-            goBackToPermissionsListLater();
+                AccessibilityNodeInfo current = getRootInActiveWindow();
+                if (current != null) enablePreciseLocationIfVisible(current);
+                finishAlwaysLocationAndReturnToTms();
+            }, 900);
         }
+    }
+
+    private void finishAlwaysLocationAndReturnToTms() {
+        if (!waitingForAlwaysLocation) return;
+        waitingForAlwaysLocation = false;
+
+        handler.postDelayed(() -> {
+            performGlobalAction(GLOBAL_ACTION_BACK);
+            lastRuntimePermissionActionTime = System.currentTimeMillis();
+            scheduleRuntimeFlowFinishCheck();
+        }, 650);
     }
 
     private boolean isNotificationPermissionScreen(String packageName, String screenText) {
@@ -1194,6 +1228,11 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
     private void setFlowMode(String mode) {
         if (!MODE_IDLE.equals(mode)) {
             finalToastShown = false;
+        }
+        if (MODE_OPEN_TMS.equals(mode)) {
+            runtimePermissionsClicked = 0;
+            lastRuntimePermissionActionTime = System.currentTimeMillis();
+            waitingForAlwaysLocation = false;
         }
         getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit().putString(KEY_FLOW_MODE, mode).apply();
     }

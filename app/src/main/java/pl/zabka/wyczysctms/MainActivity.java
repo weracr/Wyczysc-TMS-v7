@@ -622,8 +622,21 @@ public class MainActivity extends Activity {
             return;
         }
 
-        Toast.makeText(this, "Brak Device Owner/Profile Owner. Nadaję uprawnienia przez ustawienia.", Toast.LENGTH_LONG).show();
-        grantTmsPermissionsThenOpen();
+        Toast.makeText(this, "Uruchamiam TMS i nadaję zgody po kolei.", Toast.LENGTH_LONG).show();
+        launchTmsForRuntimePermissions();
+    }
+
+    private void launchTmsForRuntimePermissions() {
+        setFlowMode(MODE_OPEN_TMS);
+        Intent launchIntent = getPackageManager().getLaunchIntentForPackage(detectedTmsPackage);
+        if (launchIntent == null) {
+            clearFlowMode();
+            Toast.makeText(this, "Nie znaleziono aplikacji TMS po instalacji.", Toast.LENGTH_LONG).show();
+            return;
+        }
+        launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        launchIntent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        startActivity(launchIntent);
     }
 
     private boolean grantTmsPermissionsByPolicy() {
