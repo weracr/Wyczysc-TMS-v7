@@ -269,21 +269,20 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
 
         boolean settingsScreen = packageName.contains("settings");
         boolean hasDefaultOpenText = text.contains("otwieraj domyslnie")
+                || text.contains("otwieraj domyślnie")
                 || text.contains("open by default")
                 || text.contains("obslugiwane linki")
+                || text.contains("obsługiwane linki")
                 || text.contains("supported links");
 
-        boolean looksLikeAppInfo = text.contains("informacje o aplikacji")
+        boolean appInfoStillVisible = text.contains("informacje o aplikacji")
                 || text.contains("o aplikacji")
                 || text.contains("app info")
+                || text.contains("brak przyznanych uprawnien")
                 || text.contains("uprawnienia")
-                || text.contains("permissions")
-                || text.contains("brak przyznanych uprawnien");
+                || text.contains("permissions");
 
-        return settingsScreen
-                && containsTmsText(text)
-                && hasDefaultOpenText
-                && !looksLikeAppInfo;
+        return settingsScreen && containsTmsText(text) && hasDefaultOpenText && !appInfoStillVisible;
     }
 
     private void goBackFromWrongScreen() {
@@ -401,35 +400,44 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
     private void clickAppInfoPermissions(AccessibilityNodeInfo root) {
         if (!canClickNow()) return;
 
+        long now = System.currentTimeMillis();
+        if (now - lastAppInfoTapTime < 1000) return;
+        lastAppInfoTapTime = now;
+
         if (tapAppInfoPermissionsRow(root)) {
             markClicked();
         }
     }
 
     private boolean tapAppInfoPermissionsRow(AccessibilityNodeInfo root) {
+        if (root == null) return false;
+
         List<AccessibilityNodeInfo> exactNodes = new ArrayList<>();
         collectExactNodes(root, "uprawnienia", exactNodes);
         if (exactNodes.isEmpty()) collectExactNodes(root, "permissions", exactNodes);
         if (exactNodes.isEmpty()) collectExactNodes(root, "zezwolenia", exactNodes);
 
         for (AccessibilityNodeInfo node : exactNodes) {
+            if (node == null) continue;
+
             Rect textRect = new Rect();
             node.getBoundsInScreen(textRect);
             if (textRect.isEmpty()) continue;
-            AccessibilityNodeInfo row = findSmallClickableParent(node, textRect.centerY());
+
+            AccessibilityNodeInfo row = findBestPermissionsRowParent(node, textRect.centerY());
             if (row != null) {
                 Rect rowRect = new Rect();
                 row.getBoundsInScreen(rowRect);
-                if (!rowRect.isEmpty()) return tapAt(rowRect.centerX(), rowRect.centerY());
+                if (!rowRect.isEmpty()) {
+                    return tapAt(rowRect.centerX(), rowRect.centerY());
+                }
             }
+
+            // Ostateczny fallback: tylko dokładny tekst "Uprawnienia".
+            // Nie używamy już stałej pozycji ekranu, bo trafiała w "Otwieraj domyślnie".
             return tapAt(textRect.centerX(), textRect.centerY());
         }
 
-        Rect rootRect = new Rect();
-        root.getBoundsInScreen(rootRect);
-        if (!rootRect.isEmpty()) {
-            return tapAt(rootRect.centerX(), rootRect.top + (int) (rootRect.height() * 0.34f));
-        }
         return false;
     }
 
@@ -440,6 +448,50 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         CharSequence desc = node.getContentDescription();
         if (desc != null && normalize(desc.toString()).equals(wanted)) out.add(node);
         for (int i = 0; i < node.getChildCount(); i++) collectExactNodes(node.getChild(i), wanted, out);
+    }
+
+    private AccessibilityNodeInfo findBestPermissionsRowParent(AccessibilityNodeInfo node, int expectedY) {
+        AccessibilityNodeInfo current = node;
+        AccessibilityNodeInfo best = null;
+        int bestHeight = Integer.MAX_VALUE;
+
+        for (int i = 0; i < 8 && current != null; i++) {
+            Rect rect = new Rect();
+            current.getBoundsInScreen(rect);
+            String text = normalize(collectText(current));
+
+            boolean containsPermissions = text.contains("uprawnienia")
+                    || text.contains("permissions")
+                    || text.contains("zezwolenia");
+
+            boolean containsDefaultOpen = text.contains("otwieraj domyslnie")
+                    || text.contains("otwieraj domyślnie")
+                    || text.contains("open by default")
+                    || text.contains("obslugiwane linki")
+                    || text.contains("obsługiwane linki")
+                    || text.contains("supported links");
+
+            if (!rect.isEmpty()) {
+                int height = rect.height();
+                boolean yInside = expectedY >= rect.top && expectedY <= rect.bottom;
+                boolean rowSized = height >= 36 && height <= 220;
+
+                if (current.isClickable()
+                        && current.isEnabled()
+                        && yInside
+                        && rowSized
+                        && containsPermissions
+                        && !containsDefaultOpen) {
+                    if (height < bestHeight) {
+                        best = current;
+                        bestHeight = height;
+                    }
+                }
+            }
+            current = current.getParent();
+        }
+
+        return best;
     }
 
     private AccessibilityNodeInfo findSmallClickableParent(AccessibilityNodeInfo node, int expectedY) {
