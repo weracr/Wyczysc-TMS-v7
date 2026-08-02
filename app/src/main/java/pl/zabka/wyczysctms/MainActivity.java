@@ -689,8 +689,11 @@ public class MainActivity extends Activity {
             return;
         }
 
-        Toast.makeText(this, "Nie udało się otworzyć ekranu uprawnień bezpośrednio. Otwieram szczegóły aplikacji.", Toast.LENGTH_LONG).show();
-        openTmsSettings();
+        Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+        intent.setData(Uri.parse("package:" + detectedTmsPackage));
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        startActivity(intent);
     }
 
     private boolean openTmsPermissionSettingsDirect() {
@@ -713,9 +716,10 @@ public class MainActivity extends Activity {
             } catch (Exception ignored) {
             }
         }
-
         return false;
     }
+
+    
 
     private void setFlowMode(String mode) {
         getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit().putString(KEY_FLOW_MODE, mode).apply();

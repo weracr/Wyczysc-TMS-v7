@@ -144,11 +144,6 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         if (isBlockedAdminScreen(screenText)) return;
         if (!canHandleTmsPermissions()) return;
 
-        if (isDefaultOpenScreen(packageName, screenText)) {
-            goBackFromWrongScreen();
-            return;
-        }
-
         if (isLegacyPermissionWarningDialog(packageName, screenText)) {
             clickLegacyPermissionConfirm(root);
             return;
@@ -268,24 +263,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
     }
 
     private boolean isDefaultOpenScreen(String packageName, String screenText) {
-        String text = normalize(screenText);
-
-        boolean settingsScreen = packageName.contains("settings");
-        boolean hasDefaultOpenText = text.contains("otwieraj domyslnie")
-                || text.contains("otwieraj domyślnie")
-                || text.contains("open by default")
-                || text.contains("obslugiwane linki")
-                || text.contains("obsługiwane linki")
-                || text.contains("supported links");
-
-        boolean appInfoStillVisible = text.contains("informacje o aplikacji")
-                || text.contains("o aplikacji")
-                || text.contains("app info")
-                || text.contains("brak przyznanych uprawnien")
-                || text.contains("uprawnienia")
-                || text.contains("permissions");
-
-        return settingsScreen && containsTmsText(text) && hasDefaultOpenText && !appInfoStillVisible;
+        return false;
     }
 
     private void goBackFromWrongScreen() {
@@ -404,7 +382,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         if (!canClickNow()) return;
 
         long now = System.currentTimeMillis();
-        if (now - lastAppInfoTapTime < 1000) return;
+        if (now - lastAppInfoTapTime < 900) return;
         lastAppInfoTapTime = now;
 
         if (tapAppInfoPermissionsRow(root)) {
@@ -415,14 +393,17 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
     private boolean tapAppInfoPermissionsRow(AccessibilityNodeInfo root) {
         if (root == null) return false;
 
-        List<AccessibilityNodeInfo> exactNodes = new ArrayList<>();
-        collectExactNodes(root, "uprawnienia", exactNodes);
-        if (exactNodes.isEmpty()) collectExactNodes(root, "permissions", exactNodes);
-        if (exactNodes.isEmpty()) collectExactNodes(root, "zezwolenia", exactNodes);
+        List<AccessibilityNodeInfo> candidates = new ArrayList<>();
+        collectExactNodes(root, "uprawnienia", candidates);
+        if (candidates.isEmpty()) collectExactNodes(root, "permissions", candidates);
+        if (candidates.isEmpty()) collectExactNodes(root, "zezwolenia", candidates);
 
-        for (AccessibilityNodeInfo node : exactNodes) {
+        // Na PM90/PM95 czasem główny tekst nie jest klikalny osobno, ale subtekst jest widoczny.
+        if (candidates.isEmpty()) collectContainsNodes(root, "brak przyznanych uprawnien", candidates);
+        if (candidates.isEmpty()) collectContainsNodes(root, "no permissions granted", candidates);
+
+        for (AccessibilityNodeInfo node : candidates) {
             if (node == null) continue;
-
             Rect textRect = new Rect();
             node.getBoundsInScreen(textRect);
             if (textRect.isEmpty()) continue;
@@ -436,11 +417,8 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
                 }
             }
 
-            // Ostateczny fallback: tylko dokładny tekst "Uprawnienia".
-            // Nie używamy już stałej pozycji ekranu, bo trafiała w "Otwieraj domyślnie".
             return tapAt(textRect.centerX(), textRect.centerY());
         }
-
         return false;
     }
 
@@ -453,6 +431,15 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         for (int i = 0; i < node.getChildCount(); i++) collectExactNodes(node.getChild(i), wanted, out);
     }
 
+    private void collectContainsNodes(AccessibilityNodeInfo node, String wantedPart, List<AccessibilityNodeInfo> out) {
+        if (node == null) return;
+        CharSequence text = node.getText();
+        if (text != null && normalize(text.toString()).contains(wantedPart)) out.add(node);
+        CharSequence desc = node.getContentDescription();
+        if (desc != null && normalize(desc.toString()).contains(wantedPart)) out.add(node);
+        for (int i = 0; i < node.getChildCount(); i++) collectContainsNodes(node.getChild(i), wantedPart, out);
+    }
+
     private AccessibilityNodeInfo findBestPermissionsRowParent(AccessibilityNodeInfo node, int expectedY) {
         AccessibilityNodeInfo current = node;
         AccessibilityNodeInfo best = null;
@@ -463,9 +450,11 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
             current.getBoundsInScreen(rect);
             String text = normalize(collectText(current));
 
-            boolean containsPermissions = text.contains("uprawnienia")
+            boolean containsPermissionRow = text.contains("uprawnienia")
                     || text.contains("permissions")
-                    || text.contains("zezwolenia");
+                    || text.contains("zezwolenia")
+                    || text.contains("brak przyznanych uprawnien")
+                    || text.contains("no permissions granted");
 
             boolean containsDefaultOpen = text.contains("otwieraj domyslnie")
                     || text.contains("otwieraj domyślnie")
@@ -477,13 +466,13 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
             if (!rect.isEmpty()) {
                 int height = rect.height();
                 boolean yInside = expectedY >= rect.top && expectedY <= rect.bottom;
-                boolean rowSized = height >= 36 && height <= 220;
+                boolean rowSized = height >= 36 && height <= 260;
 
                 if (current.isClickable()
                         && current.isEnabled()
                         && yInside
                         && rowSized
-                        && containsPermissions
+                        && containsPermissionRow
                         && !containsDefaultOpen) {
                     if (height < bestHeight) {
                         best = current;
@@ -493,7 +482,6 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
             }
             current = current.getParent();
         }
-
         return best;
     }
 
