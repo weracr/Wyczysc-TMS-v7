@@ -30,7 +30,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
     private WindowManager overlayWindowManager;
     private View automationOverlayView;
 
-    private static final long CLICK_DELAY_MS = 700;
+    private static final long CLICK_DELAY_MS = 850;
     private static final long BACK_DELAY_MS = 850;
 
     private static final String PREFS_NAME = "wyczysctms_prefs";
@@ -162,7 +162,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
             return;
         }
 
-        if (waitingForAlwaysLocation && isLocationPermissionScreen(packageName, screenText)) {
+        if (isMode(MODE_OPEN_TMS) && isLocationPermissionScreen(packageName, screenText)) {
             handleLocationScreen(root);
             return;
         }
@@ -311,22 +311,29 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         if (!canClickNow()) return;
 
         String text = normalize(screenText);
-        boolean clicked;
+        boolean camera = text.contains("aparat") || text.contains("camera")
+                || text.contains("robienie zdjec") || text.contains("record video");
+        boolean location = text.contains("lokalizacja") || text.contains("location")
+                || text.contains("dokladna") || text.contains("precise");
 
-        // Aparat i pierwsza zgoda lokalizacji: dokładnie "Podczas używania aplikacji".
-        if (text.contains("aparat") || text.contains("camera")
-                || text.contains("lokalizacja") || text.contains("location")) {
-            clicked = clickByTextAllowDanger(root, "Podczas używania aplikacji")
-                    || clickByTextAllowDanger(root, "Podczas uzywania aplikacji")
-                    || clickByTextAllowDanger(root, "While using the app")
-                    || clickAnyText(root, whileUsingButtons);
+        boolean clicked;
+        if (camera || location) {
+            clicked = tapRuntimeChoiceExact(root,
+                    new String[]{"Podczas używania aplikacji", "Podczas uzywania aplikacji", "While using the app"});
+
+            // Fallback tylko dla PM95. Aparat ma pierwszy przycisk wyżej, lokalizacja niżej.
+            if (!clicked) {
+                Rect b = new Rect();
+                root.getBoundsInScreen(b);
+                if (!b.isEmpty()) {
+                    float yRatio = camera ? 0.52f : 0.62f;
+                    clicked = tapAt(b.left + b.width() / 2,
+                            b.top + (int) (b.height() * yRatio));
+                }
+            }
         } else {
-            // Kontakty, urządzenia w pobliżu, telefon, zdjęcia/filmy/muzyka/dźwięk.
-            clicked = clickByTextAllowDanger(root, "Zezwól")
-                    || clickByTextAllowDanger(root, "Zezwol")
-                    || clickByTextAllowDanger(root, "Zezwalaj")
-                    || clickByTextAllowDanger(root, "Allow")
-                    || clickAnyText(root, allowButtons);
+            clicked = tapRuntimeChoiceExact(root,
+                    new String[]{"Zezwól", "Zezwol", "Zezwalaj", "Allow"});
         }
 
         if (clicked) {
@@ -349,6 +356,41 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
                 Toast.makeText(this, "Gotowe. Uprawnienia TMS zostały nadane.", Toast.LENGTH_LONG).show();
             }
         }, 5000);
+    }
+
+    private boolean tapRuntimeChoiceExact(AccessibilityNodeInfo root, String[] labels) {
+        if (root == null || labels == null) return false;
+
+        for (String label : labels) {
+            List<AccessibilityNodeInfo> nodes = root.findAccessibilityNodeInfosByText(label);
+            if (nodes == null) continue;
+            String wanted = normalize(label);
+
+            for (AccessibilityNodeInfo node : nodes) {
+                if (node == null) continue;
+                String visible = normalize(getNodeVisibleText(node));
+                if (!visible.equals(wanted) && !visible.contains(wanted)) continue;
+
+                // Najpierw natywny ACTION_CLICK na najmniejszym klikalnym rodzicu.
+                AccessibilityNodeInfo current = node;
+                for (int i = 0; i < 5 && current != null; i++) {
+                    Rect r = new Rect();
+                    current.getBoundsInScreen(r);
+                    if (current.isEnabled() && current.isClickable() && !r.isEmpty()
+                            && r.height() >= 45 && r.height() <= 350
+                            && current.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                        return true;
+                    }
+                    current = current.getParent();
+                }
+
+                // PM95: gesture dokładnie w środek widocznego napisu/przycisku.
+                Rect r = new Rect();
+                node.getBoundsInScreen(r);
+                if (!r.isEmpty() && tapAt(r.centerX(), r.centerY())) return true;
+            }
+        }
+        return false;
     }
 
     private boolean isTmsLocationPopup(String text) {
@@ -633,26 +675,45 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
     private void handleLocationScreen(AccessibilityNodeInfo root) {
         if (!canClickNow()) return;
 
-        if (isAlwaysLocationAlreadyChecked(root)) {
-            enablePreciseLocationIfVisible(root);
-            finishAlwaysLocationAndReturnToTms();
-            return;
-        }
-
-        boolean clicked = clickLocationOptionRow(root, "Zawsze zezwalaj")
-                || clickLocationOptionRow(root, "Zezwalaj cały czas")
-                || clickLocationOptionRow(root, "Zezwalaj caly czas")
-                || clickLocationOptionRow(root, "Allow all the time")
-                || clickLocationOptionRow(root, "Always allow");
+        boolean clicked = tapRuntimeChoiceExact(root,
+                new String[]{"Zawsze zezwalaj", "Zezwalaj cały czas", "Zezwalaj caly czas",
+                        "Allow all the time", "Always allow"});
 
         if (!clicked) {
-            clicked = tapPm95AlwaysAllowCoordinates(root, false);
+            Rect b = new Rect();
+            root.getBoundsInScreen(b);
+            if (!b.isEmpty()) {
+                // Pełny screenshot PM95 1024x2048: radio Zawsze zezwalaj ~ 9,3% x i 51,5% y.
+                clicked = tapAt(b.left + (int) (b.width() * 0.093f),
+                        b.top + (int) (b.height() * 0.515f));
+            }
         }
 
         if (clicked) {
             markClicked();
             lastRuntimePermissionActionTime = System.currentTimeMillis();
-            verifyAlwaysLocationThenReturn();
+
+            // Druga kontrolowana próba w środek tekstu/wiersza, po czym powrót do TMS.
+            handler.postDelayed(() -> {
+                AccessibilityNodeInfo current = getRootInActiveWindow();
+                if (current != null && !isAlwaysLocationAlreadyChecked(current)) {
+                    Rect b = new Rect();
+                    current.getBoundsInScreen(b);
+                    if (!b.isEmpty()) {
+                        tapAt(b.left + (int) (b.width() * 0.35f),
+                                b.top + (int) (b.height() * 0.515f));
+                    }
+                }
+
+                handler.postDelayed(() -> {
+                    AccessibilityNodeInfo verified = getRootInActiveWindow();
+                    if (verified != null) enablePreciseLocationIfVisible(verified);
+                    waitingForAlwaysLocation = false;
+                    performGlobalAction(GLOBAL_ACTION_BACK);
+                    lastRuntimePermissionActionTime = System.currentTimeMillis();
+                    scheduleRuntimeFlowFinishCheck();
+                }, 1000);
+            }, 900);
         }
     }
 
