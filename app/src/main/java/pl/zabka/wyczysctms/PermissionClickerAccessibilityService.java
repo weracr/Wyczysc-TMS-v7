@@ -49,6 +49,8 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
     private long lastOpenTmsTime = 0;
     private long lastForcedSettingsOpenTime = 0;
     private long lastAppInfoTapTime = 0;
+    private long lastInitialLocationSchedule = 0;
+    private long lastAlwaysLocationSchedule = 0;
     private boolean openedAppSettingsForMissingPermission = false;
     private boolean finalToastShown = false;
     private boolean waitingForAlwaysLocation = false;
@@ -119,6 +121,18 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         String packageName = event.getPackageName() == null ? "" : event.getPackageName().toString().toLowerCase();
         String screenText = normalize(collectText(root) + " " + collectEventText(event));
 
+        // PM95: dwa ekrany lokalizacji rozpoznajemy po unikalnej treści,
+        // niezależnie od pakietu zgłoszonego przez AccessibilityEvent.
+        if (isMode(MODE_OPEN_TMS) && isPm95InitialLocationDialog(screenText)) {
+            schedulePm95InitialLocationClick();
+            return;
+        }
+
+        if (isMode(MODE_OPEN_TMS) && isPm95AlwaysLocationScreen(screenText)) {
+            schedulePm95AlwaysLocationClick();
+            return;
+        }
+
         if (canHandleUninstall() && isUninstallConfirmationDialog(packageName, screenText)) {
             handleUninstallDialog(root);
             return;
@@ -182,6 +196,120 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
                 || text.contains("panel administratora")
                 || text.contains("nadaj uprawnienia tms i uruchom")
                 || text.contains("powrot do ekranu kierowcy");
+    }
+
+    private boolean isPm95InitialLocationDialog(String screenText) {
+        String text = normalize(screenText);
+        return (text.contains("dostep do lokalizacji urzadzenia")
+                || text.contains("dokladna") && text.contains("przyblizona"))
+                && text.contains("podczas uzywania aplikacji")
+                && text.contains("tylko tym razem")
+                && text.contains("nie zezwalaj");
+    }
+
+    private void schedulePm95InitialLocationClick() {
+        long now = System.currentTimeMillis();
+        if (now - lastInitialLocationSchedule < 2500) return;
+        lastInitialLocationSchedule = now;
+
+        // PM95 potrzebuje chwili po przejściu z aparatu do lokalizacji.
+        handler.postDelayed(() -> {
+            if (!isMode(MODE_OPEN_TMS)) return;
+            AccessibilityNodeInfo root = getRootInActiveWindow();
+            if (root == null) return;
+            String text = normalize(collectText(root));
+            if (!isPm95InitialLocationDialog(text)) return;
+
+            boolean clicked = tapRuntimeChoiceExact(root,
+                    new String[]{"Podczas używania aplikacji", "Podczas uzywania aplikacji", "While using the app"});
+
+            if (!clicked) {
+                Rect b = new Rect();
+                root.getBoundsInScreen(b);
+                if (!b.isEmpty()) {
+                    // Screen PM95: środek pierwszego przycisku lokalizacji około 61,5% wysokości.
+                    clicked = tapAt(b.centerX(), b.top + (int) (b.height() * 0.615f));
+                }
+            }
+
+            if (clicked) {
+                markClicked();
+                lastRuntimePermissionActionTime = System.currentTimeMillis();
+                runtimePermissionsClicked++;
+                retryCurrentPermissionWindow();
+            }
+        }, 1400);
+    }
+
+    private boolean isPm95AlwaysLocationScreen(String screenText) {
+        String text = normalize(screenText);
+        return text.contains("lokalizacja - dostep")
+                && text.contains("zawsze zezwalaj")
+                && text.contains("zezwalaj tylko podczas uzywania aplikacji")
+                && text.contains("zawsze pytaj")
+                && text.contains("nie zezwalaj");
+    }
+
+    private void schedulePm95AlwaysLocationClick() {
+        long now = System.currentTimeMillis();
+        if (now - lastAlwaysLocationSchedule < 3000) return;
+        lastAlwaysLocationSchedule = now;
+        waitingForAlwaysLocation = true;
+
+        handler.postDelayed(() -> {
+            if (!isMode(MODE_OPEN_TMS)) return;
+            AccessibilityNodeInfo root = getRootInActiveWindow();
+            if (root == null) return;
+            String text = normalize(collectText(root));
+            if (!isPm95AlwaysLocationScreen(text)) return;
+
+            boolean clicked = tapRuntimeChoiceExact(root,
+                    new String[]{"Zawsze zezwalaj", "Allow all the time", "Always allow"});
+
+            if (!clicked) {
+                Rect b = new Rect();
+                root.getBoundsInScreen(b);
+                if (!b.isEmpty()) {
+                    // Pełny screen PM95: radio pierwszej opcji około x=9,3%, y=51,5%.
+                    clicked = tapAt(b.left + (int) (b.width() * 0.093f),
+                            b.top + (int) (b.height() * 0.515f));
+                }
+            }
+
+            if (!clicked) return;
+            markClicked();
+            lastRuntimePermissionActionTime = System.currentTimeMillis();
+
+            handler.postDelayed(() -> verifyPm95AlwaysLocationAndBack(0), 1200);
+        }, 1500);
+    }
+
+    private void verifyPm95AlwaysLocationAndBack(int attempt) {
+        AccessibilityNodeInfo root = getRootInActiveWindow();
+        if (root == null) return;
+
+        if (isAlwaysLocationAlreadyChecked(root)) {
+            enablePreciseLocationIfVisible(root);
+            waitingForAlwaysLocation = false;
+            handler.postDelayed(() -> {
+                performGlobalAction(GLOBAL_ACTION_BACK);
+                lastRuntimePermissionActionTime = System.currentTimeMillis();
+                scheduleRuntimeFlowFinishCheck();
+            }, 800);
+            return;
+        }
+
+        if (attempt >= 2) return;
+        Rect b = new Rect();
+        root.getBoundsInScreen(b);
+        if (b.isEmpty()) return;
+
+        // Naprzemiennie klik w tekst/wiersz i radio.
+        float xRatio = attempt == 0 ? 0.35f : 0.093f;
+        tapAt(b.left + (int) (b.width() * xRatio),
+                b.top + (int) (b.height() * 0.515f));
+        markClicked();
+        handler.postDelayed(() -> verifyPm95AlwaysLocationAndBack(attempt + 1), 1200);
     }
 
     private boolean isUninstallConfirmationDialog(String packageName, String screenText) {
