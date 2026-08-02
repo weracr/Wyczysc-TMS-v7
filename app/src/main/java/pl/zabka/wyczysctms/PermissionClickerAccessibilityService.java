@@ -149,6 +149,21 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
             return;
         }
 
+        if (isDefaultOpenScreen(packageName, screenText)) {
+            goBackFromWrongScreen();
+            return;
+        }
+
+        if (isTmsAppInfoScreen(packageName, screenText)) {
+            clickAppInfoPermissions(root);
+            return;
+        }
+
+        if (isAppPermissionsListScreen(packageName, screenText)) {
+            handlePermissionsList(root, screenText);
+            return;
+        }
+
         if (isLegacyPermissionWarningDialog(packageName, screenText)) {
             clickLegacyPermissionConfirm(root);
             return;
@@ -161,16 +176,6 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
 
         if (isTmsLocationPopup(screenText)) {
             clickTmsPermissionInfo(root);
-            return;
-        }
-
-        if (isTmsAppInfoScreen(packageName, screenText)) {
-            clickAppInfoPermissions(root);
-            return;
-        }
-
-        if (isAppPermissionsListScreen(packageName, screenText)) {
-            handlePermissionsList(root, screenText);
             return;
         }
 
@@ -269,27 +274,17 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
 
     private boolean isDefaultOpenScreen(String packageName, String screenText) {
         String text = normalize(screenText);
-        if (!packageName.contains("settings")) return false;
-        if (!containsTmsText(text)) return false;
-
-        boolean defaultTitle = text.contains("otwieraj domyslnie")
-                || text.contains("otwieraj domyślnie")
-                || text.contains("open by default");
-        boolean defaultBody = text.contains("otwieraj obslugiwane linki")
-                || text.contains("otwieraj obsługiwane linki")
+        return packageName.contains("settings")
+                && containsTmsText(text)
+                && (text.contains("otwieraj obslugiwane linki")
                 || text.contains("open supported links")
                 || text.contains("linki otwierane w tej aplikacji")
-                || text.contains("links opened in this app");
-        boolean appInfoTitle = text.contains("informacje o aplikacji")
-                || text.contains("o aplikacji")
-                || text.contains("app info");
-
-        return defaultTitle && defaultBody && !appInfoTitle;
+                || text.contains("0 zweryfikowanych linkow"));
     }
 
     private void goBackFromWrongScreen() {
         long now = System.currentTimeMillis();
-        if (now - lastBackTime < 1200) return;
+        if (now - lastBackTime < 700) return;
         lastBackTime = now;
         performGlobalAction(GLOBAL_ACTION_BACK);
     }
@@ -327,29 +322,18 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
     }
 
     private boolean isRuntimePermissionDialog(String packageName, String screenText) {
-        boolean system = packageName.contains("permissioncontroller")
-                || packageName.contains("packageinstaller")
-                || packageName.contains("android");
-        boolean permission = screenText.contains("zezwol")
-                || screenText.contains("zezwalaj")
-                || screenText.contains("allow")
-                || screenText.contains("permission")
-                || screenText.contains("podczas uzywania")
+        boolean permissionController = packageName.contains("permissioncontroller")
+                || packageName.contains("packageinstaller");
+
+        boolean actualDialogChoice = screenText.contains("podczas uzywania")
                 || screenText.contains("while using")
-                || screenText.contains("aparat")
-                || screenText.contains("camera")
-                || screenText.contains("lokalizacja")
-                || screenText.contains("location")
-                || screenText.contains("powiadomienia")
-                || screenText.contains("notifications")
-                || screenText.contains("kontakty")
-                || screenText.contains("contacts")
-                || screenText.contains("telefon")
-                || screenText.contains("phone")
-                || screenText.contains("zdjec")
-                || screenText.contains("photos")
-                || screenText.contains("nearby devices");
-        return system && permission && containsTmsText(screenText);
+                || screenText.contains("zezwol tylko")
+                || screenText.contains("allow only")
+                || screenText.contains("nie zezwalaj")
+                || screenText.contains("dont allow")
+                || screenText.contains("don't allow");
+
+        return permissionController && actualDialogChoice && containsTmsText(screenText);
     }
 
     private void handleRuntimePermissionDialog(AccessibilityNodeInfo root, String screenText) {
@@ -402,13 +386,11 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         if (now - lastAppInfoTapTime < 900) return;
         lastAppInfoTapTime = now;
 
-        if (tapPm95PermissionsRow(root)
+        if (tapAppInfoPermissionsRow(root)
                 || tapExactVisibleText(root, "Uprawnienia")
                 || tapExactVisibleText(root, "Permissions")
-                || tapExactVisibleText(root, "Zezwolenia")
                 || tapContainsVisibleText(root, "Brak przyznanych uprawnień")
-                || tapContainsVisibleText(root, "Brak przyznanych uprawnien")
-                || tapContainsVisibleText(root, "No permissions granted")) {
+                || tapContainsVisibleText(root, "Brak przyznanych uprawnien")) {
             markClicked();
         }
     }
