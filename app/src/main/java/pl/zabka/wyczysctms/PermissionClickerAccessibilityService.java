@@ -30,7 +30,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
     private WindowManager overlayWindowManager;
     private View automationOverlayView;
 
-    private static final long CLICK_DELAY_MS = 850;
+    private static final long CLICK_DELAY_MS = 950;
     private static final long BACK_DELAY_MS = 850;
 
     private static final String PREFS_NAME = "wyczysctms_prefs";
@@ -321,12 +321,12 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
             clicked = tapRuntimeChoiceExact(root,
                     new String[]{"Podczas używania aplikacji", "Podczas uzywania aplikacji", "While using the app"});
 
-            // Fallback tylko dla PM95. Aparat ma pierwszy przycisk wyżej, lokalizacja niżej.
             if (!clicked) {
                 Rect b = new Rect();
                 root.getBoundsInScreen(b);
                 if (!b.isEmpty()) {
-                    float yRatio = camera ? 0.52f : 0.62f;
+                    // Aparat: pierwszy przycisk ok. 51,5%. Lokalizacja z grafikami: ok. 61,5%.
+                    float yRatio = camera ? 0.515f : 0.615f;
                     clicked = tapAt(b.left + b.width() / 2,
                             b.top + (int) (b.height() * yRatio));
                 }
@@ -340,6 +340,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
             markClicked();
             lastRuntimePermissionActionTime = System.currentTimeMillis();
             runtimePermissionsClicked++;
+            retryCurrentPermissionWindow();
             scheduleRuntimeFlowFinishCheck();
         }
     }
@@ -393,6 +394,37 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         return false;
     }
 
+    private void retryCurrentPermissionWindow() {
+        handler.postDelayed(this::handleCurrentPermissionWindow, 1300);
+        handler.postDelayed(this::handleCurrentPermissionWindow, 2400);
+    }
+
+    private void handleCurrentPermissionWindow() {
+        if (!isMode(MODE_OPEN_TMS)) return;
+        AccessibilityNodeInfo root = getRootInActiveWindow();
+        if (root == null) return;
+
+        String packageName = root.getPackageName() == null
+                ? "" : root.getPackageName().toString().toLowerCase();
+        String screenText = normalize(collectText(root));
+
+        if (isLegacyPermissionWarningDialog(packageName, screenText)) {
+            clickLegacyPermissionConfirm(root);
+            return;
+        }
+        if (isRuntimePermissionDialog(packageName, screenText)) {
+            handleRuntimePermissionDialog(root, screenText);
+            return;
+        }
+        if (isTmsLocationPopup(screenText)) {
+            clickTmsPermissionInfo(root);
+            return;
+        }
+        if (isLocationPermissionScreen(packageName, screenText)) {
+            handleLocationScreen(root);
+        }
+    }
+
     private boolean isTmsLocationPopup(String text) {
         String value = normalize(text);
         return containsTmsText(value)
@@ -417,6 +449,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
             waitingForAlwaysLocation = true;
             markClicked();
             lastRuntimePermissionActionTime = System.currentTimeMillis();
+            retryCurrentPermissionWindow();
         }
         return clicked;
     }
@@ -692,6 +725,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         if (clicked) {
             markClicked();
             lastRuntimePermissionActionTime = System.currentTimeMillis();
+            retryCurrentPermissionWindow();
 
             // Druga kontrolowana próba w środek tekstu/wiersza, po czym powrót do TMS.
             handler.postDelayed(() -> {
