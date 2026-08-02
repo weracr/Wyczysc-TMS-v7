@@ -677,17 +677,38 @@ public class MainActivity extends Activity {
 
     private void grantTmsPermissionsThenOpen() {
         setFlowMode(MODE_GRANT_TMS_PERMISSIONS);
-        Toast.makeText(this, "Otwieram ustawienia TMS. Uprawnienia zostaną nadane automatycznie.", Toast.LENGTH_LONG).show();
+        Toast.makeText(this, "Otwieram uprawnienia TMS. Uprawnienia zostaną nadane automatycznie.", Toast.LENGTH_LONG).show();
 
-        try {
-            Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
-            intent.setData(Uri.parse("package:" + detectedTmsPackage));
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
-            startActivity(intent);
-        } catch (Exception e) {
-            Toast.makeText(this, "Nie można otworzyć ustawień TMS: " + e.getMessage(), Toast.LENGTH_LONG).show();
+        if (openTmsPermissionSettingsDirect()) {
+            return;
         }
+
+        Toast.makeText(this, "Nie udało się otworzyć ekranu uprawnień bezpośrednio. Otwieram szczegóły aplikacji.", Toast.LENGTH_LONG).show();
+        openTmsSettings();
+    }
+
+    private boolean openTmsPermissionSettingsDirect() {
+        Intent[] intents = new Intent[] {
+                new Intent("android.settings.APP_PERMISSION_SETTINGS"),
+                new Intent("android.settings.APPLICATION_PERMISSIONS_SETTINGS"),
+                new Intent("android.settings.MANAGE_APP_PERMISSIONS")
+        };
+
+        for (Intent intent : intents) {
+            try {
+                intent.putExtra("android.provider.extra.APP_PACKAGE", detectedTmsPackage);
+                intent.putExtra("android.intent.extra.PACKAGE_NAME", detectedTmsPackage);
+                intent.putExtra("package", detectedTmsPackage);
+                intent.setData(Uri.parse("package:" + detectedTmsPackage));
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
+                startActivity(intent);
+                return true;
+            } catch (Exception ignored) {
+            }
+        }
+
+        return false;
     }
 
     private void setFlowMode(String mode) {

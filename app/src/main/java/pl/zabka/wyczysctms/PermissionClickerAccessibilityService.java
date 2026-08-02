@@ -129,7 +129,9 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         if (isOwnAppOrAdminPanel(packageName, screenText)) {
             if (isAutomationRunning()) {
                 showAutomationOverlay();
-                
+                if (isMode(MODE_GRANT_TMS_PERMISSIONS) || isMode(MODE_FULL_REPAIR)) {
+                    forceOpenTmsSettingsIfNeeded();
+                }
             } else {
                 hideAutomationOverlay();
                 setFlowMode(MODE_IDLE);
@@ -659,13 +661,42 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         String pkg = resolveTmsPackage(null);
         if (pkg == null) return;
 
+        if (openTmsPermissionSettingsDirect(pkg)) {
+            return;
+        }
+
         try {
             Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
             intent.setData(Uri.parse("package:" + pkg));
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
             startActivity(intent);
-        } catch (Exception ignored) {}
+        } catch (Exception ignored) {
+        }
+    }
+
+    private boolean openTmsPermissionSettingsDirect(String pkg) {
+        Intent[] intents = new Intent[] {
+                new Intent("android.settings.APP_PERMISSION_SETTINGS"),
+                new Intent("android.settings.APPLICATION_PERMISSIONS_SETTINGS"),
+                new Intent("android.settings.MANAGE_APP_PERMISSIONS")
+        };
+
+        for (Intent intent : intents) {
+            try {
+                intent.putExtra("android.provider.extra.APP_PACKAGE", pkg);
+                intent.putExtra("android.intent.extra.PACKAGE_NAME", pkg);
+                intent.putExtra("package", pkg);
+                intent.setData(Uri.parse("package:" + pkg));
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
+                startActivity(intent);
+                return true;
+            } catch (Exception ignored) {
+            }
+        }
+
+        return false;
     }
 
     private void finishPermissionFlowWithMessage() {
