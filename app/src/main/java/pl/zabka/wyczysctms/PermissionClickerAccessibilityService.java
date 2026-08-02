@@ -265,14 +265,25 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
     }
 
     private boolean isDefaultOpenScreen(String packageName, String screenText) {
-        return packageName.contains("settings")
-                && containsTmsText(screenText)
-                && (screenText.contains("otwieraj domyslnie")
-                || screenText.contains("otwieraj domyślnie")
-                || screenText.contains("open by default")
-                || screenText.contains("obslugiwane linki")
-                || screenText.contains("obsługiwane linki")
-                || screenText.contains("supported links"));
+        String text = normalize(screenText);
+
+        boolean settingsScreen = packageName.contains("settings");
+        boolean hasDefaultOpenText = text.contains("otwieraj domyslnie")
+                || text.contains("open by default")
+                || text.contains("obslugiwane linki")
+                || text.contains("supported links");
+
+        boolean looksLikeAppInfo = text.contains("informacje o aplikacji")
+                || text.contains("o aplikacji")
+                || text.contains("app info")
+                || text.contains("uprawnienia")
+                || text.contains("permissions")
+                || text.contains("brak przyznanych uprawnien");
+
+        return settingsScreen
+                && containsTmsText(text)
+                && hasDefaultOpenText
+                && !looksLikeAppInfo;
     }
 
     private void goBackFromWrongScreen() {
