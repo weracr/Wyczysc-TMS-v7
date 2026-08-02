@@ -79,6 +79,7 @@ public class MainActivity extends Activity {
         }
 
         if (repairAfterUninstall && !isInstalled(detectedTmsPackage)) {
+            setFlowMode(MODE_FULL_REPAIR);
             repairAfterUninstall = false;
             grantPermissionsAfterInstall = true;
             showRepairInProgressScreen();
@@ -234,6 +235,8 @@ public class MainActivity extends Activity {
             setFlowMode(MODE_DETAILS_ONLY);
             openTmsSettings();
         });
+
+        addAdminButton(root, "STOP automatyzacji", v -> { clearFlowMode(); Toast.makeText(this, "Automatyzacja zatrzymana.", Toast.LENGTH_LONG).show(); });
 
         addAdminButton(root, "Odśwież status", v -> refreshStatus());
 
@@ -488,6 +491,8 @@ public class MainActivity extends Activity {
         }
 
         if (isInstalled(detectedTmsPackage)) {
+            setFlowMode(MODE_FULL_REPAIR);
+            grantPermissionsAfterInstall = true;
             repairAfterUninstall = true;
             Toast.makeText(this, "Odinstalowuję TMS. Po powrocie uruchomi się instalacja i nadanie uprawnień.", Toast.LENGTH_LONG).show();
             uninstallTms();
@@ -609,14 +614,18 @@ public class MainActivity extends Activity {
 
     private void grantTmsPermissionsAfterInstall() {
         setFlowMode(MODE_FULL_REPAIR);
+
         boolean grantedByPolicy = grantTmsPermissionsByPolicy();
 
         if (grantedByPolicy) {
             clearFlowMode();
-            Toast.makeText(this, "Gotowe. Można uruchomić aplikację TMS.", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "Gotowe. Uprawnienia zostały nadane. Można uruchomić TMS.", Toast.LENGTH_LONG).show();
             return;
         }
 
+        // Brak Device Owner/Profile Owner albo Android nie pozwolił nadać wszystkich zgód.
+        // Kontynuujemy więc flow przez ustawienia i Accessibility.
+        Toast.makeText(this, "Brak Device Owner/Profile Owner. Nadaję uprawnienia przez ustawienia.", Toast.LENGTH_LONG).show();
         grantTmsPermissionsThenOpen();
     }
 

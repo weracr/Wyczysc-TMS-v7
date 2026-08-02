@@ -139,7 +139,8 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
             return;
         }
 
-        if (isDetailsOnlyMode() || isIdleMode()) return;
+        if (isIdleMode()) { hideAutomationOverlay(); return; }
+        if (isDetailsOnlyMode()) return;
         if (isBlockedAdminScreen(screenText)) return;
         if (!canHandleTmsPermissions()) return;
 
