@@ -983,47 +983,13 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
     }
 
     private void updateOverlayVisibility() {
-        if (isAutomationRunning()) showAutomationOverlay();
-        else hideAutomationOverlay();
+        // Overlay/blokada tymczasowo wyłączone podczas testów automatyzacji.
+        hideAutomationOverlay();
     }
 
     private void showAutomationOverlay() {
-        if (automationOverlayView != null) return;
-        try {
-            overlayWindowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
-            if (overlayWindowManager == null) return;
-
-            FrameLayout root = new FrameLayout(this);
-            root.setBackgroundColor(Color.argb(235, 0, 0, 0));
-            root.setClickable(false);
-            root.setFocusable(false);
-            root.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
-
-            TextView message = new TextView(this);
-            message.setText("Naprawa TMS w toku\nNie dotykaj ekranu\nAplikacja automatycznie odinstaluje, zainstaluje i nada uprawnienia");
-            message.setTextColor(Color.WHITE);
-            message.setTextSize(20);
-            message.setGravity(Gravity.CENTER);
-            message.setPadding(36, 36, 36, 36);
-            message.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-
-            FrameLayout.LayoutParams msgParams = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT);
-            msgParams.gravity = Gravity.CENTER;
-            root.addView(message, msgParams);
-
-            WindowManager.LayoutParams params = new WindowManager.LayoutParams(
-                    WindowManager.LayoutParams.MATCH_PARENT,
-                    WindowManager.LayoutParams.MATCH_PARENT,
-                    WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
-                    PixelFormat.TRANSLUCENT
-            );
-            params.gravity = Gravity.CENTER;
-            overlayWindowManager.addView(root, params);
-            automationOverlayView = root;
-        } catch (Exception ignored) {
-            automationOverlayView = null;
-        }
+        // Overlay/blokada tymczasowo wyłączone podczas testów automatyzacji.
+        hideAutomationOverlay();
     }
 
     private void hideAutomationOverlay() {

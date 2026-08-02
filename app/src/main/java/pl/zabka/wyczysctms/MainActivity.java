@@ -269,7 +269,7 @@ public class MainActivity extends Activity {
     }
 
     private void showRepairInProgressScreen() {
-        Toast.makeText(this, "Naprawa TMS w toku. Nie dotykaj ekranu.", Toast.LENGTH_LONG).show();
+        Toast.makeText(this, "Naprawa TMS w toku.", Toast.LENGTH_LONG).show();
     }
 
     private void showRepairDialog() {
