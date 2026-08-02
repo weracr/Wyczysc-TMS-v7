@@ -53,6 +53,8 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
     private long lastAlwaysLocationSchedule = 0;
     private boolean openedAppSettingsForMissingPermission = false;
     private boolean finalToastShown = false;
+    private boolean initialLocationSequenceScheduled = false;
+    private boolean alwaysLocationSequenceScheduled = false;
     private boolean waitingForAlwaysLocation = false;
     private long lastRuntimePermissionActionTime = 0;
     private int runtimePermissionsClicked = 0;
@@ -468,6 +470,9 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
             markClicked();
             lastRuntimePermissionActionTime = System.currentTimeMillis();
             runtimePermissionsClicked++;
+            if (camera) {
+                schedulePm95InitialLocationAfterCamera();
+            }
             retryCurrentPermissionWindow();
             scheduleRuntimeFlowFinishCheck();
         }
@@ -553,6 +558,62 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         }
     }
 
+    private void schedulePm95InitialLocationAfterCamera() {
+        if (initialLocationSequenceScheduled) return;
+        initialLocationSequenceScheduled = true;
+
+        // Lokalizacja pojawia się po zamknięciu dialogu aparatu.
+        handler.postDelayed(() -> tapCurrentWindowRatio(0.50f, 0.615f), 1700);
+        handler.postDelayed(() -> tapCurrentWindowRatio(0.50f, 0.615f), 3000);
+    }
+
+    private void schedulePm95AlwaysLocationAfterUpdateSettings() {
+        if (alwaysLocationSequenceScheduled) return;
+        alwaysLocationSequenceScheduled = true;
+        waitingForAlwaysLocation = true;
+
+        // Ustawienia potrzebują czasu na narysowanie ekranu Lokalizacja - dostęp.
+        handler.postDelayed(() -> tapCurrentWindowRatio(0.35f, 0.515f), 2100);
+        handler.postDelayed(() -> tapCurrentWindowRatio(0.093f, 0.515f), 3400);
+        handler.postDelayed(this::verifyPm95AlwaysLocationAndReturn, 4700);
+    }
+
+    private boolean tapCurrentWindowRatio(float xRatio, float yRatio) {
+        if (!isMode(MODE_OPEN_TMS)) return false;
+        AccessibilityNodeInfo root = getRootInActiveWindow();
+        if (root == null) return false;
+        Rect b = new Rect();
+        root.getBoundsInScreen(b);
+        if (b.isEmpty()) return false;
+        boolean result = tapAt(b.left + (int) (b.width() * xRatio),
+                b.top + (int) (b.height() * yRatio));
+        if (result) markClicked();
+        return result;
+    }
+
+    private void verifyPm95AlwaysLocationAndReturn() {
+        if (!isMode(MODE_OPEN_TMS)) return;
+        AccessibilityNodeInfo root = getRootInActiveWindow();
+        if (root == null) return;
+
+        String text = normalize(collectText(root));
+        boolean stillOnLocationSettings = text.contains("lokalizacja - dostep")
+                || text.contains("zawsze zezwalaj")
+                || text.contains("zezwalaj tylko podczas uzywania aplikacji");
+
+        if (stillOnLocationSettings && !isAlwaysLocationAlreadyChecked(root)) {
+            tapCurrentWindowRatio(0.093f, 0.515f);
+            handler.postDelayed(this::verifyPm95AlwaysLocationAndReturn, 1300);
+            return;
+        }
+
+        enablePreciseLocationIfVisible(root);
+        waitingForAlwaysLocation = false;
+        performGlobalAction(GLOBAL_ACTION_BACK);
+        lastRuntimePermissionActionTime = System.currentTimeMillis();
+        scheduleRuntimeFlowFinishCheck();
+    }
+
     private boolean isTmsLocationPopup(String text) {
         String value = normalize(text);
         return containsTmsText(value)
@@ -577,6 +638,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
             waitingForAlwaysLocation = true;
             markClicked();
             lastRuntimePermissionActionTime = System.currentTimeMillis();
+            schedulePm95AlwaysLocationAfterUpdateSettings();
             retryCurrentPermissionWindow();
         }
         return clicked;
@@ -1518,6 +1580,8 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
             finalToastShown = false;
         }
         if (MODE_OPEN_TMS.equals(mode)) {
+            initialLocationSequenceScheduled = false;
+            alwaysLocationSequenceScheduled = false;
             runtimePermissionsClicked = 0;
             lastRuntimePermissionActionTime = System.currentTimeMillis();
             waitingForAlwaysLocation = false;
