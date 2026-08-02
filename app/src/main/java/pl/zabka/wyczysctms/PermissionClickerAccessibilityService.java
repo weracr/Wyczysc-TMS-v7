@@ -144,6 +144,11 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         if (isBlockedAdminScreen(screenText)) return;
         if (!canHandleTmsPermissions()) return;
 
+        if (isDefaultOpenScreen(packageName, screenText)) {
+            goBackFromWrongScreen();
+            return;
+        }
+
         if (isLegacyPermissionWarningDialog(packageName, screenText)) {
             clickLegacyPermissionConfirm(root);
             return;
@@ -263,7 +268,23 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
     }
 
     private boolean isDefaultOpenScreen(String packageName, String screenText) {
-        return false;
+        String text = normalize(screenText);
+        if (!packageName.contains("settings")) return false;
+        if (!containsTmsText(text)) return false;
+
+        boolean defaultTitle = text.contains("otwieraj domyslnie")
+                || text.contains("otwieraj domyślnie")
+                || text.contains("open by default");
+        boolean defaultBody = text.contains("otwieraj obslugiwane linki")
+                || text.contains("otwieraj obsługiwane linki")
+                || text.contains("open supported links")
+                || text.contains("linki otwierane w tej aplikacji")
+                || text.contains("links opened in this app");
+        boolean appInfoTitle = text.contains("informacje o aplikacji")
+                || text.contains("o aplikacji")
+                || text.contains("app info");
+
+        return defaultTitle && defaultBody && !appInfoTitle;
     }
 
     private void goBackFromWrongScreen() {
@@ -381,7 +402,8 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         if (now - lastAppInfoTapTime < 900) return;
         lastAppInfoTapTime = now;
 
-        if (tapExactVisibleText(root, "Uprawnienia")
+        if (tapPm95PermissionsRow(root)
+                || tapExactVisibleText(root, "Uprawnienia")
                 || tapExactVisibleText(root, "Permissions")
                 || tapExactVisibleText(root, "Zezwolenia")
                 || tapContainsVisibleText(root, "Brak przyznanych uprawnień")
@@ -389,6 +411,18 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
                 || tapContainsVisibleText(root, "No permissions granted")) {
             markClicked();
         }
+    }
+
+    private boolean tapPm95PermissionsRow(AccessibilityNodeInfo root) {
+        if (root == null) return false;
+        Rect rootRect = new Rect();
+        root.getBoundsInScreen(rootRect);
+        if (rootRect.isEmpty()) return false;
+
+        // Dla układu ze screena PM90/PM95 wiersz Uprawnienia jest około 66% wysokości aktywnego okna.
+        int x = rootRect.left + (rootRect.width() / 2);
+        int y = rootRect.top + (int) (rootRect.height() * 0.66f);
+        return tapAt(x, y);
     }
 
     private boolean tapExactVisibleText(AccessibilityNodeInfo root, String wantedText) {
