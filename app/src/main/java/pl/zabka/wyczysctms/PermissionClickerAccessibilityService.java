@@ -129,9 +129,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         if (isOwnAppOrAdminPanel(packageName, screenText)) {
             if (isAutomationRunning()) {
                 showAutomationOverlay();
-                if (isMode(MODE_GRANT_TMS_PERMISSIONS) || isMode(MODE_FULL_REPAIR)) {
-                    forceOpenTmsSettingsIfNeeded();
-                }
+                
             } else {
                 hideAutomationOverlay();
                 setFlowMode(MODE_IDLE);
@@ -391,23 +389,9 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
 
     private void clickAppInfoPermissions(AccessibilityNodeInfo root) {
         if (!canClickNow()) return;
-        long now = System.currentTimeMillis();
-        if (now - lastAppInfoTapTime < 1000) return;
-        lastAppInfoTapTime = now;
 
         if (tapAppInfoPermissionsRow(root)) {
             markClicked();
-            return;
-        }
-
-        // Fallback for PM90/PM95 Settings layout. This taps the permissions row area,
-        // not the lower "Open by default" row.
-        Rect bounds = new Rect();
-        root.getBoundsInScreen(bounds);
-        if (!bounds.isEmpty()) {
-            int x = bounds.left + (bounds.width() / 2);
-            int y = bounds.top + (int) (bounds.height() * 0.34f);
-            if (tapAt(x, y)) markClicked();
         }
     }
 
@@ -476,6 +460,8 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
     private void handlePermissionsList(AccessibilityNodeInfo root, String screenText) {
         if (!canClickNow()) return;
 
+        String text = normalize(screenText);
+
         for (String permission : permissionRows) {
             if (isPermissionInDeniedSection(screenText, permission)) {
                 if (tapPermissionRowByText(root, permission)) {
@@ -485,8 +471,17 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
             }
         }
 
-        // Jeżeli nie ma już pozycji w sekcji "Nie mają dostępu", kończymy flow.
-        finishPermissionFlowAndCloseSettings();
+        boolean definitelyPermissionList = text.contains("uprawnienia aplikacji")
+                || text.contains("app permissions")
+                || text.contains("maja dostep")
+                || text.contains("allowed");
+
+        boolean stillHasDeniedSection = text.contains("nie maja dostepu")
+                || text.contains("not allowed");
+
+        if (definitelyPermissionList && !stillHasDeniedSection) {
+            finishPermissionFlowAndCloseSettings();
+        }
     }
 
     private boolean isCameraPermissionScreen(String packageName, String screenText) {
@@ -632,13 +627,12 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         hideAutomationOverlay();
 
         try {
-            Toast.makeText(this, "Gotowe. Można uruchomić aplikację TMS.", Toast.LENGTH_LONG).show();
+            android.widget.Toast.makeText(this, "Gotowe. Można uruchomić aplikację TMS.", android.widget.Toast.LENGTH_LONG).show();
         } catch (Exception ignored) {
         }
 
-        // Zamykamy ekran ustawień/uprawnień. HOME jest stabilniejsze niż kilka cofnięć,
-        // bo ustawienia Androida potrafią mieć różną głębokość ekranów na PM90/PM95.
-        handler.postDelayed(() -> performGlobalAction(GLOBAL_ACTION_HOME), 300);
+        handler.postDelayed(() -> performGlobalAction(GLOBAL_ACTION_BACK), 300);
+        handler.postDelayed(() -> performGlobalAction(GLOBAL_ACTION_BACK), 900);
     }
 
     private void openTmsAppAndFinishPermissionFlow() {
