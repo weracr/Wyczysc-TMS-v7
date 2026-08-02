@@ -639,22 +639,20 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
             return;
         }
 
-        boolean clicked = clickByTextAllowDanger(root, "Zawsze zezwalaj")
-                || clickByTextAllowDanger(root, "Zezwalaj cały czas")
-                || clickByTextAllowDanger(root, "Zezwalaj caly czas")
-                || clickByTextAllowDanger(root, "Allow all the time")
-                || clickByTextAllowDanger(root, "Always allow")
-                || tapTextCenter(root, "Zawsze zezwalaj")
-                || tapTextCenter(root, "Allow all the time");
+        boolean clicked = clickLocationOptionRow(root, "Zawsze zezwalaj")
+                || clickLocationOptionRow(root, "Zezwalaj cały czas")
+                || clickLocationOptionRow(root, "Zezwalaj caly czas")
+                || clickLocationOptionRow(root, "Allow all the time")
+                || clickLocationOptionRow(root, "Always allow");
+
+        if (!clicked) {
+            clicked = tapPm95AlwaysAllowCoordinates(root, false);
+        }
 
         if (clicked) {
             markClicked();
             lastRuntimePermissionActionTime = System.currentTimeMillis();
-            handler.postDelayed(() -> {
-                AccessibilityNodeInfo current = getRootInActiveWindow();
-                if (current != null) enablePreciseLocationIfVisible(current);
-                finishAlwaysLocationAndReturnToTms();
-            }, 900);
+            verifyAlwaysLocationThenReturn();
         }
     }
 
@@ -667,6 +665,73 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
             lastRuntimePermissionActionTime = System.currentTimeMillis();
             scheduleRuntimeFlowFinishCheck();
         }, 650);
+    }
+
+    private boolean clickLocationOptionRow(AccessibilityNodeInfo root, String optionText) {
+        if (root == null || optionText == null) return false;
+        List<AccessibilityNodeInfo> nodes = root.findAccessibilityNodeInfosByText(optionText);
+        if (nodes == null || nodes.isEmpty()) return false;
+
+        String wanted = normalize(optionText);
+        for (AccessibilityNodeInfo node : nodes) {
+            if (node == null) continue;
+            String visible = normalize(getNodeVisibleText(node));
+            if (!visible.equals(wanted) && !visible.contains(wanted)) continue;
+
+            AccessibilityNodeInfo current = node;
+            for (int i = 0; i < 6 && current != null; i++) {
+                Rect rect = new Rect();
+                current.getBoundsInScreen(rect);
+                if (!rect.isEmpty() && current.isEnabled() && current.isClickable()
+                        && rect.height() >= 45 && rect.height() <= 260) {
+                    if (current.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true;
+                }
+                current = current.getParent();
+            }
+
+            Rect rect = new Rect();
+            node.getBoundsInScreen(rect);
+            if (!rect.isEmpty()) return tapAt(rect.centerX(), rect.centerY());
+        }
+        return false;
+    }
+
+    private boolean tapPm95AlwaysAllowCoordinates(AccessibilityNodeInfo root, boolean radioOnly) {
+        if (root == null) return false;
+        Rect bounds = new Rect();
+        root.getBoundsInScreen(bounds);
+        if (bounds.isEmpty()) return false;
+
+        float xRatio = radioOnly ? 0.093f : 0.35f;
+        int x = bounds.left + (int) (bounds.width() * xRatio);
+        int y = bounds.top + (int) (bounds.height() * 0.515f);
+        return tapAt(x, y);
+    }
+
+    private void verifyAlwaysLocationThenReturn() {
+        handler.postDelayed(() -> {
+            AccessibilityNodeInfo firstCheck = getRootInActiveWindow();
+            if (firstCheck == null) return;
+
+            if (isAlwaysLocationAlreadyChecked(firstCheck)) {
+                enablePreciseLocationIfVisible(firstCheck);
+                finishAlwaysLocationAndReturnToTms();
+                return;
+            }
+
+            // Druga próba dokładnie w radio po lewej stronie wiersza.
+            if (tapPm95AlwaysAllowCoordinates(firstCheck, true)) {
+                markClicked();
+            }
+
+            handler.postDelayed(() -> {
+                AccessibilityNodeInfo secondCheck = getRootInActiveWindow();
+                if (secondCheck != null && isAlwaysLocationAlreadyChecked(secondCheck)) {
+                    enablePreciseLocationIfVisible(secondCheck);
+                    finishAlwaysLocationAndReturnToTms();
+                }
+            }, 900);
+        }, 900);
     }
 
     private boolean isNotificationPermissionScreen(String packageName, String screenText) {
