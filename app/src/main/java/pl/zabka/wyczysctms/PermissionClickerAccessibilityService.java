@@ -129,7 +129,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         if (isOwnAppOrAdminPanel(packageName, screenText)) {
             if (isAutomationRunning()) {
                 showAutomationOverlay();
-                if (isMode(MODE_GRANT_TMS_PERMISSIONS) || isMode(MODE_FULL_REPAIR)) {
+                if (isMode(MODE_GRANT_TMS_PERMISSIONS)) {
                     forceOpenTmsSettingsIfNeeded();
                 }
             } else {
@@ -1116,7 +1116,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
     }
 
     private boolean canHandleTmsPermissions() {
-        return isMode(MODE_FULL_REPAIR) || isMode(MODE_GRANT_TMS_PERMISSIONS) || isMode(MODE_OPEN_TMS);
+        return isMode(MODE_GRANT_TMS_PERMISSIONS) || isMode(MODE_OPEN_TMS);
     }
 
     private boolean isDetailsOnlyMode() {

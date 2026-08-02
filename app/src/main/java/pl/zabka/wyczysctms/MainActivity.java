@@ -79,12 +79,11 @@ public class MainActivity extends Activity {
         }
 
         if (repairAfterUninstall && !isInstalled(detectedTmsPackage)) {
-            setFlowMode(MODE_FULL_REPAIR);
             repairAfterUninstall = false;
             grantPermissionsAfterInstall = true;
+            setFlowMode(MODE_FULL_REPAIR);
             showRepairInProgressScreen();
             Toast.makeText(this, "TMS odinstalowany. Uruchamiam instalację.", Toast.LENGTH_LONG).show();
-            setFlowMode(MODE_FULL_REPAIR);
             installNewestTmsFromDownload();
             return;
         }
@@ -473,8 +472,11 @@ public class MainActivity extends Activity {
     }
 
     private void repairTms() {
+        clearFlowMode();
         setFlowMode(MODE_FULL_REPAIR);
         grantPermissionsAfterInstall = true;
+        repairAfterUninstall = false;
+        waitingForInstallResult = false;
         showRepairInProgressScreen();
 
         File newestApk = findNewestTmsApkInDownload();
@@ -491,12 +493,11 @@ public class MainActivity extends Activity {
         }
 
         if (isInstalled(detectedTmsPackage)) {
-            setFlowMode(MODE_FULL_REPAIR);
-            grantPermissionsAfterInstall = true;
             repairAfterUninstall = true;
-            Toast.makeText(this, "Odinstalowuję TMS. Po powrocie uruchomi się instalacja i nadanie uprawnień.", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "Odinstalowuję TMS. Po powrocie uruchomi się instalacja.", Toast.LENGTH_LONG).show();
             uninstallTms();
         } else {
+            Toast.makeText(this, "TMS nie jest zainstalowany. Uruchamiam instalację.", Toast.LENGTH_LONG).show();
             installNewestTmsFromDownload();
         }
     }
@@ -613,8 +614,6 @@ public class MainActivity extends Activity {
     }
 
     private void grantTmsPermissionsAfterInstall() {
-        setFlowMode(MODE_FULL_REPAIR);
-
         boolean grantedByPolicy = grantTmsPermissionsByPolicy();
 
         if (grantedByPolicy) {
@@ -623,8 +622,6 @@ public class MainActivity extends Activity {
             return;
         }
 
-        // Brak Device Owner/Profile Owner albo Android nie pozwolił nadać wszystkich zgód.
-        // Kontynuujemy więc flow przez ustawienia i Accessibility.
         Toast.makeText(this, "Brak Device Owner/Profile Owner. Nadaję uprawnienia przez ustawienia.", Toast.LENGTH_LONG).show();
         grantTmsPermissionsThenOpen();
     }
