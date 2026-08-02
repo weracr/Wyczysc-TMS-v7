@@ -4,6 +4,12 @@ import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.GestureDescription;
 import android.content.Intent;
 import android.graphics.Path;
+import android.widget.TextView;
+import android.view.WindowManager;
+import android.view.View;
+import android.view.Gravity;
+import android.graphics.PixelFormat;
+import android.graphics.Color;
 import android.graphics.Rect;
 import android.net.Uri;
 import android.os.Handler;
@@ -37,6 +43,9 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
     private boolean watcherRunning = false;
     private boolean waitingForAlwaysLocation = false;
     private boolean finalBackScheduled = false;
+    private WindowManager bannerWindowManager;
+    private View statusBannerView;
+    private TextView statusBannerText;
 
     private final List<String> installerButtons = Arrays.asList(
             "Gotowe", "Done", "Zainstaluj", "Instaluj", "Aktualizuj", "Zaktualizuj",
@@ -58,6 +67,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
 
     @Override
     public void onInterrupt() {
+        hideStatusBanner();
     }
 
     private void startWatcher() {
@@ -82,6 +92,29 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         String packageName = root.getPackageName() == null
                 ? "" : root.getPackageName().toString().toLowerCase();
         String text = normalize(collectText(root));
+
+        // Dwa kroki lokalizacji wykonuje kierowca. Banner przepuszcza dotyk.
+        if (MODE_OPEN_TMS.equals(mode) && isInitialLocationDialog(text)) {
+            showStatusBanner(
+                    "Wymagane działanie: wybierz PODCZAS UŻYWANIA APLIKACJI",
+                    true);
+            return;
+        }
+
+        if (MODE_OPEN_TMS.equals(mode) && isAlwaysLocationSettings(text)) {
+            showStatusBanner(
+                    "Wymagane działanie: wybierz ZAWSZE ZEZWALAJ, a następnie naciśnij WSTECZ",
+                    true);
+            return;
+        }
+
+        if (isAutomationMode(mode)) {
+            showStatusBanner(
+                    "Naprawa TMS w toku. Prosimy przez chwilę nie dotykać ekranu.",
+                    false);
+        } else {
+            hideStatusBanner();
+        }
 
         if ((MODE_FULL_REPAIR.equals(mode) || MODE_UNINSTALL_TMS.equals(mode))
                 && isUninstallDialog(packageName, text)) {
@@ -152,6 +185,61 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         }
     }
 
+    private boolean isAutomationMode(String mode) {
+        return MODE_FULL_REPAIR.equals(mode)
+                || MODE_UNINSTALL_TMS.equals(mode)
+                || MODE_INSTALL_TMS.equals(mode)
+                || MODE_OPEN_TMS.equals(mode)
+                || MODE_GRANT_TMS_PERMISSIONS.equals(mode);
+    }
+
+    private void showStatusBanner(String message, boolean actionRequired) {
+        try {
+            if (bannerWindowManager == null) {
+                bannerWindowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
+            }
+
+            if (statusBannerView == null) {
+                TextView banner = new TextView(this);
+                banner.setTextColor(Color.WHITE);
+                banner.setTextSize(17);
+                banner.setGravity(Gravity.CENTER);
+                banner.setPadding(24, 18, 24, 18);
+                statusBannerText = banner;
+                statusBannerView = banner;
+
+                WindowManager.LayoutParams params = new WindowManager.LayoutParams(
+                        WindowManager.LayoutParams.MATCH_PARENT,
+                        WindowManager.LayoutParams.WRAP_CONTENT,
+                        WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                        WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                                | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+                                | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                        PixelFormat.TRANSLUCENT
+                );
+                params.gravity = Gravity.TOP;
+                bannerWindowManager.addView(statusBannerView, params);
+            }
+
+            statusBannerText.setText(message);
+            statusBannerText.setBackgroundColor(actionRequired
+                    ? Color.rgb(180, 35, 24)
+                    : Color.rgb(37, 99, 235));
+        } catch (Exception ignored) {
+        }
+    }
+
+    private void hideStatusBanner() {
+        try {
+            if (bannerWindowManager != null && statusBannerView != null) {
+                bannerWindowManager.removeView(statusBannerView);
+            }
+        } catch (Exception ignored) {
+        }
+        statusBannerView = null;
+        statusBannerText = null;
+    }
+
     private boolean isInitialLocationDialog(String text) {
         return text.contains("podczas uzywania aplikacji")
                 && text.contains("tylko tym razem")
@@ -202,6 +290,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         handler.postDelayed(() -> {
             performGlobalAction(GLOBAL_ACTION_BACK);
             setFlowMode(MODE_IDLE);
+            hideStatusBanner();
             finalBackScheduled = false;
             Toast.makeText(this, "Gotowe. Uprawnienia TMS zostały nadane.", Toast.LENGTH_LONG).show();
         }, 900);
