@@ -95,7 +95,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
     private Action detectAction(String mode, String pkg, String text) {
         if ((MODE_FULL_REPAIR.equals(mode) || MODE_UNINSTALL_TMS.equals(mode))
                 && isUninstallDialog(pkg, text)) {
-            return Action.text("uninstall", 1500, Arrays.asList("Odinstaluj", "Uninstall", "OK", "Ok"));
+            return Action.textWithFallback("uninstall", 1500, Arrays.asList("OK", "Ok", "Odinstaluj", "Uninstall"), 861, 1169);
         }
 
         if ((MODE_FULL_REPAIR.equals(mode) || MODE_INSTALL_TMS.equals(mode))
@@ -164,6 +164,9 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
                 if (stillCurrent == null || !stillCurrent.key.equals(action.key)) return;
 
                 clicked = clickVisibleText(current, action.labels);
+                if (!clicked && action.referenceX > 0 && action.referenceY > 0) {
+                    clicked = tapPhysicalPoint(action.referenceX, action.referenceY);
+                }
                 if (clicked) {
                     markClicked();
                     if ("always_location".equals(action.key)) {
@@ -198,6 +201,17 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         setFlowMode(MODE_OPEN_TMS);
         launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         startActivity(launch);
+    }
+
+    private boolean tapPhysicalPoint(int x, int y) {
+        if (!canClickNow()) return false;
+        Path path = new Path();
+        path.moveTo(x, y);
+        GestureDescription.StrokeDescription stroke =
+                new GestureDescription.StrokeDescription(path, 80, 180);
+        GestureDescription gesture =
+                new GestureDescription.Builder().addStroke(stroke).build();
+        return dispatchGesture(gesture, null, null);
     }
 
     private boolean clickVisibleText(AccessibilityNodeInfo root, List<String> labels) {
@@ -277,15 +291,19 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
     }
 
     private boolean isInitialLocationDialog(String text) {
-        return text.contains("podczas uzywania aplikacji")
-                && text.contains("tylko tym razem")
+        return text.contains("tylko tym razem")
                 && text.contains("nie zezwalaj")
-                && (text.contains("lokaliz") || (text.contains("dokladna") && text.contains("przyblizona")));
+                && (text.contains("lokaliz")
+                || text.contains("dokladna")
+                || text.contains("przyblizona"));
     }
 
     private boolean isUninstallDialog(String pkg, String text) {
-        boolean system = pkg.contains("packageinstaller") || pkg.contains("settings") || pkg.equals("android");
-        return system && (text.contains("odinstaluj") || text.contains("uninstall"));
+        return (text.contains("odinstalowac te aplikacje")
+                || text.contains("odinstalować tę aplikację")
+                || text.contains("odinstaluj")
+                || text.contains("uninstall"))
+                && (text.contains("tms") || text.contains("falcon") || text.contains("zabka"));
     }
 
     private boolean isInstallerScreen(String pkg, String text) {
@@ -351,15 +369,24 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         final String key;
         final long delayMs;
         final List<String> labels;
+        final int referenceX;
+        final int referenceY;
 
-        private Action(String key, long delayMs, List<String> labels) {
+        private Action(String key, long delayMs, List<String> labels, int referenceX, int referenceY) {
             this.key = key;
             this.delayMs = delayMs;
             this.labels = labels;
+            this.referenceX = referenceX;
+            this.referenceY = referenceY;
         }
 
         static Action text(String key, long delayMs, List<String> labels) {
-            return new Action(key, delayMs, labels);
+            return new Action(key, delayMs, labels, 0, 0);
+        }
+
+        static Action textWithFallback(String key, long delayMs, List<String> labels,
+                                       int referenceX, int referenceY) {
+            return new Action(key, delayMs, labels, referenceX, referenceY);
         }
     }
 }
