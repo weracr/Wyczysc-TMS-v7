@@ -111,21 +111,9 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
 
         // Kolejność jest celowa. Lokalizacja musi być wykryta przed ogólnym dialogiem zgody.
         if ((text.contains("lokalizacji urzadzenia") || text.contains("dostep do lokalizacji"))
-                && (text.contains("podczas uzywania aplikacji")
-                || text.contains("podczas korzystania z aplikacji"))
+                && text.contains("podczas uzywania aplikacji")
                 && text.contains("tylko tym razem")) {
-            return ScreenAction.textWithFallback(
-                    "location_initial",
-                    1800,
-                    Arrays.asList(
-                            "Podczas używania aplikacji",
-                            "Podczas uzywania aplikacji",
-                            "Podczas korzystania z aplikacji",
-                            "While using the app"
-                    ),
-                    528,
-                    1331
-            );
+            return ScreenAction.locationGesture("location_initial", 1900);
         }
 
         if (text.contains("robienie zdjec") && text.contains("nagrywanie filmow")) {
@@ -208,7 +196,12 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
                 }
 
                 boolean clicked;
-                if (action.labels != null) {
+                if (action.locationGesture) {
+                    clicked = tapLocationButtonByVisibleBounds(current);
+                    if (!clicked) {
+                        clicked = tapReferencePoint(528, 1331);
+                    }
+                } else if (action.labels != null) {
                     clicked = clickVisibleText(current, action.labels);
                     if (!clicked && action.referenceX > 0 && action.referenceY > 0) {
                         clicked = tapReferencePoint(action.referenceX, action.referenceY);
@@ -235,6 +228,36 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
                 handler.postDelayed(() -> pendingScreenKey = "", 900);
             }
         }, action.delayMs);
+    }
+
+    private boolean tapLocationButtonByVisibleBounds(AccessibilityNodeInfo root) {
+        List<String> labels = Arrays.asList(
+                "Podczas używania aplikacji",
+                "Podczas uzywania aplikacji",
+                "Podczas korzystania z aplikacji",
+                "While using the app"
+        );
+
+        for (String label : labels) {
+            List<AccessibilityNodeInfo> nodes = root.findAccessibilityNodeInfosByText(label);
+            if (nodes == null) continue;
+            String wanted = normalize(label);
+
+            for (AccessibilityNodeInfo node : nodes) {
+                if (node == null || !node.isVisibleToUser()) continue;
+                String visible = normalize(getNodeText(node));
+                if (!visible.equals(wanted) && !visible.contains(wanted)) continue;
+
+                Rect bounds = new Rect();
+                node.getBoundsInScreen(bounds);
+                if (!bounds.isEmpty()) {
+                    // Ważne: celowo NIE używamy ACTION_CLICK. Na tym oknie PM95
+                    // ACTION_CLICK potrafi zwrócić true bez faktycznej zmiany ekranu.
+                    return tapAt(bounds.centerX(), bounds.centerY());
+                }
+            }
+        }
+        return false;
     }
 
     private boolean tapReferencePoint(int referenceX, int referenceY) {
@@ -407,29 +430,36 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         final int referenceX;
         final int referenceY;
         final boolean backAfterTap;
+        final boolean locationGesture;
 
         private ScreenAction(String key, long delayMs, List<String> labels,
-                             int referenceX, int referenceY, boolean backAfterTap) {
+                             int referenceX, int referenceY, boolean backAfterTap,
+                             boolean locationGesture) {
             this.key = key;
             this.delayMs = delayMs;
             this.labels = labels;
             this.referenceX = referenceX;
             this.referenceY = referenceY;
             this.backAfterTap = backAfterTap;
+            this.locationGesture = locationGesture;
         }
 
         static ScreenAction text(String key, long delayMs, List<String> labels) {
-            return new ScreenAction(key, delayMs, labels, 0, 0, false);
+            return new ScreenAction(key, delayMs, labels, 0, 0, false, false);
         }
 
         static ScreenAction textWithFallback(String key, long delayMs, List<String> labels,
                                              int referenceX, int referenceY) {
-            return new ScreenAction(key, delayMs, labels, referenceX, referenceY, false);
+            return new ScreenAction(key, delayMs, labels, referenceX, referenceY, false, false);
+        }
+
+        static ScreenAction locationGesture(String key, long delayMs) {
+            return new ScreenAction(key, delayMs, null, 0, 0, false, true);
         }
 
         static ScreenAction point(String key, long delayMs,
                                   int referenceX, int referenceY, boolean backAfterTap) {
-            return new ScreenAction(key, delayMs, null, referenceX, referenceY, backAfterTap);
+            return new ScreenAction(key, delayMs, null, referenceX, referenceY, backAfterTap, false);
         }
     }
 }
