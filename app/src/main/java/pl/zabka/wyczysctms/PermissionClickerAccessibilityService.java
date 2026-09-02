@@ -1,24 +1,12 @@
 package pl.zabka.wyczysctms;
 
 import android.accessibilityservice.AccessibilityService;
-import android.widget.FrameLayout;
-import android.widget.LinearLayout;
-import android.widget.Button;
-import android.graphics.drawable.ColorDrawable;
 import android.accessibilityservice.GestureDescription;
 import android.content.Intent;
 import android.graphics.Path;
-import android.widget.TextView;
-import android.view.WindowManager;
-import android.view.View;
-import android.view.Gravity;
-import android.graphics.PixelFormat;
-import android.graphics.Color;
 import android.graphics.Rect;
-import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
-import android.provider.Settings;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.widget.Toast;
@@ -44,17 +32,8 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
     private final Handler handler = new Handler(Looper.getMainLooper());
 
     private long lastClickTime = 0;
-    private boolean preciseTapPending = false;
     private boolean watcherRunning = false;
-    private boolean waitingForAlwaysLocation = false;
-    private boolean finalBackScheduled = false;
-    private WindowManager bannerWindowManager;
-    private View statusBannerView;
-    private TextView statusBannerText;
-    private View fullBlocker;
-    private final View[] holeBlockers = new View[4];
-    private View actionMessageView;
-    private static final long UI_STABILIZE_DELAY_MS = 1450;
+    private boolean preciseTapPending = false;
 
     private final List<String> installerButtons = Arrays.asList(
             "Gotowe", "Done", "Zainstaluj", "Instaluj", "Aktualizuj", "Zaktualizuj",
@@ -76,7 +55,6 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
 
     @Override
     public void onInterrupt() {
-        hideAllGuidance();
     }
 
     private void startWatcher() {
@@ -95,7 +73,6 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
 
     private void handleCurrentScreen() {
         AccessibilityNodeInfo root = getRootInActiveWindow();
-        hideAllGuidance();
         if (root == null) return;
 
         String mode = getFlowMode();
@@ -103,41 +80,15 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
                 ? "" : root.getPackageName().toString().toLowerCase();
         String text = normalize(collectText(root));
 
-        // PM95: dokładne punkty z Lokalizacji wskaźnika. Overlay wyłączony.
-        if ((MODE_OPEN_TMS.equals(getFlowMode()) || MODE_GRANT_TMS_PERMISSIONS.equals(getFlowMode()))
-                && handlePm95PointerCoordinates(root, text)) {
-            return;
-        }
-
-        // Dwa kroki lokalizacji wykonuje kierowca. Banner przepuszcza dotyk.
-        if (MODE_OPEN_TMS.equals(mode) && isInitialLocationDialog(text)) {
-            hideAllGuidance();
-            return;
-        }
-
-        if (MODE_OPEN_TMS.equals(mode) && isAlwaysLocationSettings(text)) {
-            hideAllGuidance();
-            return;
-        }
-
-        if (isAutomationMode(mode)) {
-            hideAllGuidance();
-        } else {
-            hideAllGuidance();
-        }
-
         if ((MODE_FULL_REPAIR.equals(mode) || MODE_UNINSTALL_TMS.equals(mode))
                 && isUninstallDialog(packageName, text)) {
-            handler.postDelayed(() -> {
-                AccessibilityNodeInfo current = getRootInActiveWindow();
-                if (current != null) clickFirst(current, Arrays.asList("Odinstaluj", "Uninstall", "OK", "Ok"));
-            }, UI_STABILIZE_DELAY_MS);
+            scheduleTextClick(root, Arrays.asList("Odinstaluj", "Uninstall", "OK", "Ok"), 1450);
             return;
         }
 
         if ((MODE_FULL_REPAIR.equals(mode) || MODE_INSTALL_TMS.equals(mode))
                 && isInstallerScreen(packageName, text)) {
-            clickFirst(root, installerButtons);
+            scheduleTextClick(root, installerButtons, 1000);
             return;
         }
 
@@ -145,262 +96,31 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
             return;
         }
 
-        // 1. Pierwszy dialog lokalizacji PM95. Ten warunek ma pierwszeństwo przed ogólnym runtime.
-        if (isInitialLocationDialog(text)) {
-            clickVisibleText(root, Arrays.asList(
-                    "Podczas używania aplikacji",
-                    "Podczas uzywania aplikacji",
-                    "While using the app"
-            ));
+        if (handlePm95ExactCoordinates(text)) {
             return;
         }
 
-        // 2. Końcowy ekran ustawień lokalizacji PM95.
-        if (isAlwaysLocationSettings(text)) {
-            waitingForAlwaysLocation = true;
-            handleAlwaysLocation(root);
-            return;
-        }
-
-        // 3. Komunikat z TMS prowadzący do końcowego ekranu lokalizacji.
-        if (isTmsUpdateLocationPopup(text)) {
-            if (clickVisibleText(root, Arrays.asList(
-                    "ZAKTUALIZUJ USTAWIENIA",
-                    "Zaktualizuj ustawienia",
-                    "AKTUALIZUJ USTAWIENIA",
-                    "Aktualizuj ustawienia",
-                    "UPDATE SETTINGS",
-                    "Update settings"
-            ))) {
-                waitingForAlwaysLocation = true;
-            }
-            return;
-        }
-
-        // 4. Ostrzeżenie Androida dla starszej aplikacji / mediów.
         if (text.contains("potwierdz") || text.contains("confirm")) {
-            if (clickVisibleText(root, Arrays.asList("Potwierdź", "Potwierdz", "Confirm", "OK", "Ok"))) {
-                return;
-            }
+            scheduleTextClick(root, Arrays.asList("Potwierdź", "Potwierdz", "Confirm", "OK", "Ok"), 1000);
+            return;
         }
 
-        // 5. Pozostałe natywne dialogi runtime.
         if (isRuntimePermissionDialog(packageName, text)) {
             if (text.contains("aparat") || text.contains("camera")) {
-                handler.postDelayed(() -> {
-                    AccessibilityNodeInfo current = getRootInActiveWindow();
-                    if (current != null) clickVisibleText(current, Arrays.asList(
-                            "Podczas używania aplikacji",
-                            "Podczas uzywania aplikacji",
-                            "While using the app"));
-                }, UI_STABILIZE_DELAY_MS);
+                scheduleTextClick(root, Arrays.asList(
+                        "Podczas używania aplikacji",
+                        "Podczas uzywania aplikacji",
+                        "While using the app"
+                ), 1450);
             } else {
-                clickVisibleText(root, Arrays.asList("Zezwól", "Zezwol", "Zezwalaj", "Allow"));
+                scheduleTextClick(root, Arrays.asList("Zezwól", "Zezwol", "Zezwalaj", "Allow"), 1000);
             }
         }
     }
 
-    private void hideAllGuidance();
-        try {
-            if (bannerWindowManager == null) {
-                bannerWindowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
-            }
-            FrameLayout layer = new FrameLayout(this);
-            layer.setBackgroundColor(Color.argb(220, 0, 0, 0));
-            layer.setOnTouchListener((v, e) -> true);
-            TextView text = makeInstruction(message, false);
-            FrameLayout.LayoutParams tp = new FrameLayout.LayoutParams(-1, -2);
-            tp.gravity = Gravity.BOTTOM;
-            tp.bottomMargin = dp2(110);
-            layer.addView(text, tp);
-            WindowManager.LayoutParams wp = overlayParams(-1, -1, Gravity.TOP | Gravity.START, 0, 0);
-            bannerWindowManager.addView(layer, wp);
-            fullBlocker = layer;
-        } catch (Exception ignored) {}
-    }
-
-    private void hideAllGuidance();
-        try {
-            if (bannerWindowManager == null) {
-                bannerWindowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
-            }
-            int w = getResources().getDisplayMetrics().widthPixels;
-            int h = getResources().getDisplayMetrics().heightPixels;
-            int left = (int)(w * hx), top = (int)(h * hy);
-            int right = left + (int)(w * hw), bottom = top + (int)(h * hh);
-            addBlocker(0, 0, w, top, 0);
-            addBlocker(0, bottom, w, h - bottom, 1);
-            addBlocker(0, top, left, bottom - top, 2);
-            addBlocker(right, top, w - right, bottom - top, 3);
-
-            TextView text = makeInstruction(message, true);
-            WindowManager.LayoutParams tp = overlayParams(
-                    w, WindowManager.LayoutParams.WRAP_CONTENT,
-                    Gravity.BOTTOM, 0, dp2(70));
-            tp.flags |= WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
-            bannerWindowManager.addView(text, tp);
-            statusBannerView = text;
-            statusBannerText = text;
-        } catch (Exception ignored) {}
-    }
-
-    private void addBlocker(int x, int y, int width, int height, int index) {
-        if (width <= 0 || height <= 0) return;
-        View v = new View(this);
-        v.setBackgroundColor(Color.argb(220, 0, 0, 0));
-        v.setOnTouchListener((view, event) -> true);
-        bannerWindowManager.addView(v, overlayParams(width, height,
-                Gravity.TOP | Gravity.START, x, y));
-        holeBlockers[index] = v;
-    }
-
-    private TextView makeInstruction(String message, boolean required) {
-        TextView text = new TextView(this);
-        text.setText(message);
-        text.setTextColor(Color.WHITE);
-        text.setTextSize(19);
-        text.setGravity(Gravity.CENTER);
-        text.setPadding(24, 20, 24, 20);
-        text.setBackgroundColor(required ? Color.rgb(180, 35, 24) : Color.rgb(37, 99, 235));
-        return text;
-    }
-
-    private WindowManager.LayoutParams overlayParams(int width, int height, int gravity, int x, int y) {
-        WindowManager.LayoutParams p = new WindowManager.LayoutParams(
-                width, height,
-                WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-                        | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
-                PixelFormat.TRANSLUCENT);
-        p.gravity = gravity;
-        p.x = x;
-        p.y = y;
-        return p;
-    }
-
-    private void hideAllGuidance() {
-        try {
-            if (bannerWindowManager != null && fullBlocker != null) bannerWindowManager.removeView(fullBlocker);
-        } catch (Exception ignored) {}
-        fullBlocker = null;
-        for (int i = 0; i < holeBlockers.length; i++) {
-            try {
-                if (bannerWindowManager != null && holeBlockers[i] != null) bannerWindowManager.removeView(holeBlockers[i]);
-            } catch (Exception ignored) {}
-            holeBlockers[i] = null;
-        }
-        try {
-            if (bannerWindowManager != null && statusBannerView != null) bannerWindowManager.removeView(statusBannerView);
-        } catch (Exception ignored) {}
-        statusBannerView = null;
-        statusBannerText = null;
-    }
-
-    private int dp2(int value) {
-        return (int)(value * getResources().getDisplayMetrics().density + 0.5f);
-    }
-
-    private void showFinishActions() {
-        hideAllGuidance();
-        try {
-            if (bannerWindowManager == null) {
-                bannerWindowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
-            }
-            LinearLayout panel = new LinearLayout(this);
-            panel.setOrientation(LinearLayout.VERTICAL);
-            panel.setPadding(dp2(24), dp2(24), dp2(24), dp2(24));
-            panel.setGravity(Gravity.CENTER);
-            panel.setBackgroundColor(Color.argb(235, 0, 0, 0));
-
-            TextView title = makeInstruction("Naprawa zakończona. Można uruchomić TMS.", false);
-            panel.addView(title, new LinearLayout.LayoutParams(-1, -2));
-
-            Button open = new Button(this);
-            open.setText("Uruchom TMS");
-            open.setOnClickListener(v -> {
-                Intent launch = getPackageManager().getLaunchIntentForPackage("pl.optidata.tms_android_2017");
-                if (launch != null) {
-                    launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                    startActivity(launch);
-                }
-                hideFinishActions();
-            });
-            panel.addView(open, new LinearLayout.LayoutParams(-1, dp2(56)));
-
-            Button remove = new Button(this);
-            remove.setText("Usuń komunikat");
-            remove.setOnClickListener(v -> hideFinishActions());
-            panel.addView(remove, new LinearLayout.LayoutParams(-1, dp2(56)));
-
-            bannerWindowManager.addView(panel, overlayParams(-1, -1, Gravity.TOP | Gravity.START, 0, 0));
-            actionMessageView = panel;
-        } catch (Exception ignored) {}
-    }
-
-    private void hideFinishActions() {
-        try {
-            if (bannerWindowManager != null && actionMessageView != null) bannerWindowManager.removeView(actionMessageView);
-        } catch (Exception ignored) {}
-        actionMessageView = null;
-    }
-
-    private boolean isAutomationMode(String mode) {
-        return MODE_FULL_REPAIR.equals(mode)
-                || MODE_UNINSTALL_TMS.equals(mode)
-                || MODE_INSTALL_TMS.equals(mode)
-                || MODE_OPEN_TMS.equals(mode)
-                || MODE_GRANT_TMS_PERMISSIONS.equals(mode);
-    }
-
-    private void hideAllGuidance();
-            }
-
-            if (statusBannerView == null) {
-                TextView banner = new TextView(this);
-                banner.setTextColor(Color.WHITE);
-                banner.setTextSize(17);
-                banner.setGravity(Gravity.CENTER);
-                banner.setPadding(24, 18, 24, 18);
-                statusBannerText = banner;
-                statusBannerView = banner;
-
-                WindowManager.LayoutParams params = new WindowManager.LayoutParams(
-                        WindowManager.LayoutParams.MATCH_PARENT,
-                        WindowManager.LayoutParams.WRAP_CONTENT,
-                        WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-                        WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-                                | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
-                                | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
-                        PixelFormat.TRANSLUCENT
-                );
-                params.gravity = Gravity.TOP;
-                bannerWindowManager.addView(statusBannerView, params);
-            }
-
-            statusBannerText.setText(message);
-            statusBannerText.setBackgroundColor(actionRequired
-                    ? Color.rgb(180, 35, 24)
-                    : Color.rgb(37, 99, 235));
-        } catch (Exception ignored) {
-        }
-    }
-
-    private void hideStatusBanner() {
-        try {
-            if (bannerWindowManager != null && statusBannerView != null) {
-                bannerWindowManager.removeView(statusBannerView);
-            }
-        } catch (Exception ignored) {
-        }
-        statusBannerView = null;
-        statusBannerText = null;
-    }
-
-    private boolean handlePm95PointerCoordinates(AccessibilityNodeInfo root, String rawText) {
-        String text = normalize(rawText);
+    private boolean handlePm95ExactCoordinates(String text) {
         if (preciseTapPending) return true;
 
-        // Pierwszy ekran lokalizacji ma pierwszeństwo przed aparatem i dialogami ogólnymi.
         if (text.contains("lokalizacji urzadzenia")
                 && text.contains("podczas uzywania aplikacji")
                 && text.contains("tylko tym razem")) {
@@ -418,7 +138,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
             return true;
         }
 
-        if (text.contains("urzadzen w poblizu") || text.contains("urzadzen w poblizu")) {
+        if (text.contains("urzadzen w poblizu")) {
             schedulePreciseTap(614, 1202, 1200, false);
             return true;
         }
@@ -428,18 +148,22 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
             return true;
         }
 
-        if (text.contains("dostep do zdjec") && text.contains("muzyki") && text.contains("dzwiekow")) {
+        if (text.contains("dostep do zdjec")
+                && text.contains("muzyki")
+                && text.contains("dzwiekow")) {
             schedulePreciseTap(553, 1184, 1200, false);
             return true;
         }
 
-        if (text.contains("dostep do lokalizacji") && text.contains("zaktualizuj ustawienia")) {
+        if (text.contains("dostep do lokalizacji")
+                && (text.contains("zaktualizuj ustawienia") || text.contains("aktualizuj ustawienia"))) {
             schedulePreciseTap(626, 1329, 1450, false);
             return true;
         }
 
-        if (text.contains("lokalizacja - dostep") && text.contains("zawsze zezwalaj")) {
-            // Klik w radio Zawsze zezwalaj, potem systemowy BACK do TMS.
+        if (text.contains("zawsze zezwalaj")
+                && text.contains("zezwalaj tylko podczas uzywania aplikacji")
+                && text.contains("zawsze pytaj")) {
             schedulePreciseTap(106, 1158, 1600, true);
             return true;
         }
@@ -448,101 +172,43 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
     }
 
     private void schedulePreciseTap(int referenceX, int referenceY, long delayMs, boolean backAfterTap) {
+        if (preciseTapPending) return;
         preciseTapPending = true;
-        handler.postDelayed(() -> {
-            try {
-                int width = getResources().getDisplayMetrics().widthPixels;
-                int height = getResources().getDisplayMetrics().heightPixels;
-                int x = Math.round(width * (referenceX / 1024f));
-                int y = Math.round(height * (referenceY / 2048f));
-                tapAt(x, y);
-                markClicked();
 
-                if (backAfterTap) {
-                    handler.postDelayed(() -> {
-                        performGlobalAction(GLOBAL_ACTION_BACK);
-                        setFlowMode(MODE_IDLE);
-                        Toast.makeText(this,
-                                "Gotowe. Można uruchomić TMS.",
-                                Toast.LENGTH_LONG).show();
-                    }, 1600);
-                }
-            } finally {
-                handler.postDelayed(() -> preciseTapPending = false, 700);
+        handler.postDelayed(() -> {
+            int width = getResources().getDisplayMetrics().widthPixels;
+            int height = getResources().getDisplayMetrics().heightPixels;
+            int x = Math.round(width * (referenceX / 1024f));
+            int y = Math.round(height * (referenceY / 2048f));
+
+            tapAt(x, y);
+            markClicked();
+
+            if (backAfterTap) {
+                handler.postDelayed(() -> {
+                    performGlobalAction(GLOBAL_ACTION_BACK);
+                    setFlowMode(MODE_IDLE);
+                    Toast.makeText(this,
+                            "Gotowe. Można uruchomić TMS.",
+                            Toast.LENGTH_LONG).show();
+                }, 1600);
             }
+
+            handler.postDelayed(() -> preciseTapPending = false, 800);
         }, delayMs);
     }
 
-    private boolean isInitialLocationDialog(String text) {
-        return text.contains("podczas uzywania aplikacji")
-                && text.contains("tylko tym razem")
-                && text.contains("nie zezwalaj")
-                && (text.contains("lokaliz")
-                || (text.contains("dokladna") && text.contains("przyblizona")));
-    }
-
-    private boolean isAlwaysLocationSettings(String text) {
-        return text.contains("zawsze zezwalaj")
-                && text.contains("zezwalaj tylko podczas uzywania aplikacji")
-                && text.contains("zawsze pytaj")
-                && text.contains("nie zezwalaj");
-    }
-
-    private boolean isTmsUpdateLocationPopup(String text) {
-        return containsTmsText(text)
-                && (text.contains("zaktualizuj ustawienia")
-                || text.contains("aktualizuj ustawienia")
-                || text.contains("update settings"));
-    }
-
-    private boolean isRuntimePermissionDialog(String packageName, String text) {
-        boolean controller = packageName.contains("permissioncontroller")
-                || packageName.contains("packageinstaller")
-                || packageName.equals("android");
-        boolean choices = text.contains("nie zezwalaj")
-                || text.contains("dont allow")
-                || text.contains("don't allow");
-        return controller && choices;
-    }
-
-    private void handleAlwaysLocation(AccessibilityNodeInfo root) {
-        if (isOptionChecked(root, Arrays.asList("Zawsze zezwalaj", "Allow all the time", "Always allow"))) {
-            enablePreciseLocationIfNeeded(root);
-            scheduleBackToTms();
-            return;
-        }
-
-        clickVisibleText(root, Arrays.asList("Zawsze zezwalaj", "Allow all the time", "Always allow"));
-    }
-
-    private void scheduleBackToTms() {
-        if (finalBackScheduled) return;
-        finalBackScheduled = true;
-        waitingForAlwaysLocation = false;
+    private void scheduleTextClick(AccessibilityNodeInfo ignoredRoot, List<String> labels, long delayMs) {
+        if (preciseTapPending) return;
+        preciseTapPending = true;
 
         handler.postDelayed(() -> {
-            performGlobalAction(GLOBAL_ACTION_BACK);
-            setFlowMode(MODE_IDLE);
-            hideAllGuidance();
-            finalBackScheduled = false;
-            showFinishActions();
-        }, 900);
-    }
-
-    private void enablePreciseLocationIfNeeded(AccessibilityNodeInfo root) {
-        if (isOptionChecked(root, Arrays.asList(
-                "Używaj dokładnej lokalizacji",
-                "Uzywaj dokladnej lokalizacji",
-                "Precise location"
-        ))) {
-            return;
-        }
-
-        clickVisibleText(root, Arrays.asList(
-                "Używaj dokładnej lokalizacji",
-                "Uzywaj dokladnej lokalizacji",
-                "Precise location"
-        ));
+            AccessibilityNodeInfo current = getRootInActiveWindow();
+            if (current != null) {
+                clickVisibleText(current, labels);
+            }
+            handler.postDelayed(() -> preciseTapPending = false, 700);
+        }, delayMs);
     }
 
     private boolean clickVisibleText(AccessibilityNodeInfo root, List<String> labels) {
@@ -585,7 +251,9 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         for (int i = 0; i < 7 && current != null; i++) {
             Rect bounds = new Rect();
             current.getBoundsInScreen(bounds);
-            if (current.isVisibleToUser() && current.isEnabled() && current.isClickable()
+            if (current.isVisibleToUser()
+                    && current.isEnabled()
+                    && current.isClickable()
                     && !bounds.isEmpty()) {
                 int area = bounds.width() * bounds.height();
                 if (area < bestArea) {
@@ -596,30 +264,6 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
             current = current.getParent();
         }
         return best;
-    }
-
-    private boolean isOptionChecked(AccessibilityNodeInfo root, List<String> labels) {
-        for (String label : labels) {
-            List<AccessibilityNodeInfo> nodes = root.findAccessibilityNodeInfosByText(label);
-            if (nodes == null) continue;
-            for (AccessibilityNodeInfo node : nodes) {
-                AccessibilityNodeInfo current = node;
-                for (int i = 0; i < 6 && current != null; i++) {
-                    if (containsCheckedNode(current)) return true;
-                    current = current.getParent();
-                }
-            }
-        }
-        return false;
-    }
-
-    private boolean containsCheckedNode(AccessibilityNodeInfo node) {
-        if (node == null) return false;
-        if (node.isCheckable() && node.isChecked()) return true;
-        for (int i = 0; i < node.getChildCount(); i++) {
-            if (containsCheckedNode(node.getChild(i))) return true;
-        }
-        return false;
     }
 
     private boolean tapAt(int x, int y) {
@@ -651,8 +295,14 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         return installer && action && !text.contains("odinstaluj") && !text.contains("uninstall");
     }
 
-    private boolean clickFirst(AccessibilityNodeInfo root, List<String> labels) {
-        return clickVisibleText(root, labels);
+    private boolean isRuntimePermissionDialog(String packageName, String text) {
+        boolean controller = packageName.contains("permissioncontroller")
+                || packageName.contains("packageinstaller")
+                || packageName.equals("android");
+        boolean choices = text.contains("nie zezwalaj")
+                || text.contains("dont allow")
+                || text.contains("don't allow");
+        return controller && choices;
     }
 
     private boolean canClickNow() {
@@ -685,10 +335,6 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         }
     }
 
-    private boolean containsTmsText(String text) {
-        return text.contains("zabka") || text.contains("tms") || text.contains("falcon");
-    }
-
     private String getFlowMode() {
         return getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
                 .getString(KEY_FLOW_MODE, MODE_IDLE);
@@ -696,9 +342,8 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
 
     private void setFlowMode(String mode) {
         if (MODE_OPEN_TMS.equals(mode)) {
-            waitingForAlwaysLocation = false;
-            finalBackScheduled = false;
             lastClickTime = 0;
+            preciseTapPending = false;
         }
         getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
                 .edit()
