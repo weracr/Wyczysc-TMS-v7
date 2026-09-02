@@ -39,11 +39,12 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
     private static final String MODE_GRANT_TMS_PERMISSIONS = "GRANT_TMS_PERMISSIONS_FLOW";
 
     private static final long POLL_MS = 500;
-    private static final long CLICK_GUARD_MS = 1100;
+    private static final long CLICK_GUARD_MS = 1200;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
 
     private long lastClickTime = 0;
+    private boolean preciseTapPending = false;
     private boolean watcherRunning = false;
     private boolean waitingForAlwaysLocation = false;
     private boolean finalBackScheduled = false;
@@ -94,6 +95,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
 
     private void handleCurrentScreen() {
         AccessibilityNodeInfo root = getRootInActiveWindow();
+        hideAllGuidance();
         if (root == null) return;
 
         String mode = getFlowMode();
@@ -101,24 +103,25 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
                 ? "" : root.getPackageName().toString().toLowerCase();
         String text = normalize(collectText(root));
 
+        // PM95: dokładne punkty z Lokalizacji wskaźnika. Overlay wyłączony.
+        if ((MODE_OPEN_TMS.equals(getFlowMode()) || MODE_GRANT_TMS_PERMISSIONS.equals(getFlowMode()))
+                && handlePm95PointerCoordinates(root, text)) {
+            return;
+        }
+
         // Dwa kroki lokalizacji wykonuje kierowca. Banner przepuszcza dotyk.
         if (MODE_OPEN_TMS.equals(mode) && isInitialLocationDialog(text)) {
-            showGuidanceWithHole(
-                    "Wymagane działanie: wybierz PODCZAS UŻYWANIA APLIKACJI",
-                    0.08f, 0.47f, 0.84f, 0.18f);
+            hideAllGuidance();
             return;
         }
 
         if (MODE_OPEN_TMS.equals(mode) && isAlwaysLocationSettings(text)) {
-            showGuidanceWithHole(
-                    "Wymagane działanie: wybierz ZAWSZE ZEZWALAJ, a następnie naciśnij WSTECZ",
-                    0.03f, 0.45f, 0.94f, 0.16f);
+            hideAllGuidance();
             return;
         }
 
         if (isAutomationMode(mode)) {
-            showFullBlocker(
-                    "Naprawa TMS w toku. Prosimy przez chwilę nie dotykać ekranu.");
+            hideAllGuidance();
         } else {
             hideAllGuidance();
         }
@@ -197,8 +200,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         }
     }
 
-    private void showFullBlocker(String message) {
-        hideAllGuidance();
+    private void hideAllGuidance();
         try {
             if (bannerWindowManager == null) {
                 bannerWindowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
@@ -217,8 +219,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         } catch (Exception ignored) {}
     }
 
-    private void showGuidanceWithHole(String message, float hx, float hy, float hw, float hh) {
-        hideAllGuidance();
+    private void hideAllGuidance();
         try {
             if (bannerWindowManager == null) {
                 bannerWindowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
@@ -351,10 +352,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
                 || MODE_GRANT_TMS_PERMISSIONS.equals(mode);
     }
 
-    private void showStatusBanner(String message, boolean actionRequired) {
-        try {
-            if (bannerWindowManager == null) {
-                bannerWindowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
+    private void hideAllGuidance();
             }
 
             if (statusBannerView == null) {
@@ -396,6 +394,83 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         }
         statusBannerView = null;
         statusBannerText = null;
+    }
+
+    private boolean handlePm95PointerCoordinates(AccessibilityNodeInfo root, String rawText) {
+        String text = normalize(rawText);
+        if (preciseTapPending) return true;
+
+        // Pierwszy ekran lokalizacji ma pierwszeństwo przed aparatem i dialogami ogólnymi.
+        if (text.contains("lokalizacji urzadzenia")
+                && text.contains("podczas uzywania aplikacji")
+                && text.contains("tylko tym razem")) {
+            schedulePreciseTap(528, 1331, 1450, false);
+            return true;
+        }
+
+        if (text.contains("robienie zdjec") && text.contains("nagrywanie filmow")) {
+            schedulePreciseTap(583, 1097, 1450, false);
+            return true;
+        }
+
+        if (text.contains("dostep do kontaktow")) {
+            schedulePreciseTap(566, 1157, 1200, false);
+            return true;
+        }
+
+        if (text.contains("urzadzen w poblizu") || text.contains("urzadzen w poblizu")) {
+            schedulePreciseTap(614, 1202, 1200, false);
+            return true;
+        }
+
+        if (text.contains("polaczen telefonicznych") || text.contains("zarzadzanie nimi")) {
+            schedulePreciseTap(554, 1184, 1200, false);
+            return true;
+        }
+
+        if (text.contains("dostep do zdjec") && text.contains("muzyki") && text.contains("dzwiekow")) {
+            schedulePreciseTap(553, 1184, 1200, false);
+            return true;
+        }
+
+        if (text.contains("dostep do lokalizacji") && text.contains("zaktualizuj ustawienia")) {
+            schedulePreciseTap(626, 1329, 1450, false);
+            return true;
+        }
+
+        if (text.contains("lokalizacja - dostep") && text.contains("zawsze zezwalaj")) {
+            // Klik w radio Zawsze zezwalaj, potem systemowy BACK do TMS.
+            schedulePreciseTap(106, 1158, 1600, true);
+            return true;
+        }
+
+        return false;
+    }
+
+    private void schedulePreciseTap(int referenceX, int referenceY, long delayMs, boolean backAfterTap) {
+        preciseTapPending = true;
+        handler.postDelayed(() -> {
+            try {
+                int width = getResources().getDisplayMetrics().widthPixels;
+                int height = getResources().getDisplayMetrics().heightPixels;
+                int x = Math.round(width * (referenceX / 1024f));
+                int y = Math.round(height * (referenceY / 2048f));
+                tapAt(x, y);
+                markClicked();
+
+                if (backAfterTap) {
+                    handler.postDelayed(() -> {
+                        performGlobalAction(GLOBAL_ACTION_BACK);
+                        setFlowMode(MODE_IDLE);
+                        Toast.makeText(this,
+                                "Gotowe. Można uruchomić TMS.",
+                                Toast.LENGTH_LONG).show();
+                    }, 1600);
+                }
+            } finally {
+                handler.postDelayed(() -> preciseTapPending = false, 700);
+            }
+        }, delayMs);
     }
 
     private boolean isInitialLocationDialog(String text) {
