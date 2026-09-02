@@ -110,10 +110,22 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         }
 
         // Kolejność jest celowa. Lokalizacja musi być wykryta przed ogólnym dialogiem zgody.
-        if (text.contains("lokalizacji urzadzenia")
-                && text.contains("podczas uzywania aplikacji")
+        if ((text.contains("lokalizacji urzadzenia") || text.contains("dostep do lokalizacji"))
+                && (text.contains("podczas uzywania aplikacji")
+                || text.contains("podczas korzystania z aplikacji"))
                 && text.contains("tylko tym razem")) {
-            return ScreenAction.point("location_initial", 1500, 528, 1331, false);
+            return ScreenAction.textWithFallback(
+                    "location_initial",
+                    1800,
+                    Arrays.asList(
+                            "Podczas używania aplikacji",
+                            "Podczas uzywania aplikacji",
+                            "Podczas korzystania z aplikacji",
+                            "While using the app"
+                    ),
+                    528,
+                    1331
+            );
         }
 
         if (text.contains("robienie zdjec") && text.contains("nagrywanie filmow")) {
@@ -198,6 +210,9 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
                 boolean clicked;
                 if (action.labels != null) {
                     clicked = clickVisibleText(current, action.labels);
+                    if (!clicked && action.referenceX > 0 && action.referenceY > 0) {
+                        clicked = tapReferencePoint(action.referenceX, action.referenceY);
+                    }
                 } else {
                     clicked = tapReferencePoint(action.referenceX, action.referenceY);
                 }
@@ -217,7 +232,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
             } finally {
                 actionPending = false;
                 // Watcher może ponowić ten sam ekran tylko wtedy, gdy klik nie przełączył okna.
-                handler.postDelayed(() -> pendingScreenKey = "", 1200);
+                handler.postDelayed(() -> pendingScreenKey = "", 900);
             }
         }, action.delayMs);
     }
@@ -405,6 +420,11 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
 
         static ScreenAction text(String key, long delayMs, List<String> labels) {
             return new ScreenAction(key, delayMs, labels, 0, 0, false);
+        }
+
+        static ScreenAction textWithFallback(String key, long delayMs, List<String> labels,
+                                             int referenceX, int referenceY) {
+            return new ScreenAction(key, delayMs, labels, referenceX, referenceY, false);
         }
 
         static ScreenAction point(String key, long delayMs,
