@@ -113,7 +113,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         if ((text.contains("lokalizacji urzadzenia") || text.contains("dostep do lokalizacji"))
                 && text.contains("podczas uzywania aplikacji")
                 && text.contains("tylko tym razem")) {
-            return ScreenAction.locationGesture("location_initial", 1900);
+            return ScreenAction.point("location_initial", 2200, 488, 1329, false);
         }
 
         if (text.contains("robienie zdjec") && text.contains("nagrywanie filmow")) {
@@ -263,6 +263,14 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
     private boolean tapReferencePoint(int referenceX, int referenceY) {
         int width = getResources().getDisplayMetrics().widthPixels;
         int height = getResources().getDisplayMetrics().heightPixels;
+
+        // PM95 raportuje aplikacji wysokość obszaru roboczego bez części pasków systemowych.
+        // Lokalizacja wskaźnika pokazuje natomiast współrzędne całego ekranu 1024x2048.
+        // Dlatego na PM95 używamy surowych punktów z Lokalizacji wskaźnika bez skalowania.
+        if (width >= 1000 && width <= 1050) {
+            return tapAt(referenceX, referenceY);
+        }
+
         int x = Math.round(width * (referenceX / 1024f));
         int y = Math.round(height * (referenceY / 2048f));
         return tapAt(x, y);
@@ -327,7 +335,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         Path path = new Path();
         path.moveTo(x, y);
         GestureDescription.StrokeDescription stroke =
-                new GestureDescription.StrokeDescription(path, 0, 140);
+                new GestureDescription.StrokeDescription(path, 100, 300);
         GestureDescription gesture =
                 new GestureDescription.Builder().addStroke(stroke).build();
         return dispatchGesture(gesture, null, null);
