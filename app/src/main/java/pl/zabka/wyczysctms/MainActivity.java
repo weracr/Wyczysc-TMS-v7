@@ -618,11 +618,20 @@ public class MainActivity extends Activity {
 
         if (grantedByPolicy) {
             clearFlowMode();
-            Toast.makeText(this, "Gotowe. Uprawnienia zostały nadane. Można uruchomić TMS.", Toast.LENGTH_LONG).show();
+            Toast.makeText(
+                    this,
+                    "Gotowe. Uprawnienia zostały nadane. Można uruchomić TMS.",
+                    Toast.LENGTH_LONG
+            ).show();
             return;
         }
 
-        Toast.makeText(this, "Najpierw ustawiam lokalizację TMS, potem uruchomię aplikację.", Toast.LENGTH_LONG).show();
+        Toast.makeText(
+                this,
+                "Najpierw ustawiam lokalizację TMS, potem uruchomię aplikację.",
+                Toast.LENGTH_LONG
+        ).show();
+
         openTmsSettingsBeforeFirstLaunch();
     }
 
