@@ -622,8 +622,28 @@ public class MainActivity extends Activity {
             return;
         }
 
-        Toast.makeText(this, "Uruchamiam TMS i nadaję zgody po kolei.", Toast.LENGTH_LONG).show();
-        launchTmsForRuntimePermissions();
+        Toast.makeText(this, "Najpierw ustawiam lokalizację TMS, potem uruchomię aplikację.", Toast.LENGTH_LONG).show();
+        openTmsSettingsBeforeFirstLaunch();
+    }
+
+
+    private void openTmsSettingsBeforeFirstLaunch() {
+        setFlowMode(MODE_GRANT_TMS_PERMISSIONS);
+
+        try {
+            Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+            intent.setData(Uri.parse("package:" + detectedTmsPackage));
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            startActivity(intent);
+        } catch (Exception e) {
+            clearFlowMode();
+            Toast.makeText(
+                    this,
+                    "Nie można otworzyć ustawień TMS: " + e.getMessage(),
+                    Toast.LENGTH_LONG
+            ).show();
+        }
     }
 
     private void launchTmsForRuntimePermissions() {
