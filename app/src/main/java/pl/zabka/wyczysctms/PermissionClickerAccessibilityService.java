@@ -113,7 +113,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         if ((text.contains("lokalizacji urzadzenia") || text.contains("dostep do lokalizacji"))
                 && text.contains("podczas uzywania aplikacji")
                 && text.contains("tylko tym razem")) {
-            return ScreenAction.point("location_initial", 2200, 488, 1329, false);
+            return ScreenAction.point("location_initial", 1700, 512, 1248, false);
         }
 
         if (text.contains("robienie zdjec") && text.contains("nagrywanie filmow")) {
@@ -196,7 +196,9 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
                 }
 
                 boolean clicked;
-                if (action.locationGesture) {
+                if ("location_initial".equals(action.key)) {
+                    clicked = startInitialLocationTapGrid();
+                } else if (action.locationGesture) {
                     clicked = tapLocationButtonByVisibleBounds(current);
                     if (!clicked) {
                         clicked = tapReferencePoint(528, 1331);
@@ -258,6 +260,60 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
             }
         }
         return false;
+    }
+
+    private boolean startInitialLocationTapGrid() {
+        // Bezpieczne punkty wewnątrz przycisku ustalone ze screenów:
+        // bounds około X=120..903, Y=1182..1313.
+        final int[][] points = new int[][] {
+                {512, 1248},
+                {350, 1248},
+                {675, 1248},
+                {512, 1215},
+                {512, 1280}
+        };
+
+        for (int i = 0; i < points.length; i++) {
+            final int index = i;
+            handler.postDelayed(() -> {
+                AccessibilityNodeInfo root = getRootInActiveWindow();
+                if (root == null) return;
+                String text = normalize(collectText(root));
+
+                // Nie klikaj kolejnego punktu, jeżeli okno już zniknęło.
+                boolean stillLocation = text.contains("podczas uzywania aplikacji")
+                        && text.contains("tylko tym razem")
+                        && text.contains("nie zezwalaj")
+                        && (text.contains("lokaliz")
+                        || (text.contains("dokladna") && text.contains("przyblizona")));
+                if (!stillLocation) return;
+
+                tapGridPoint(points[index][0], points[index][1]);
+                markClicked();
+            }, index * 700L);
+        }
+        return true;
+    }
+
+    private boolean tapGridPoint(int referenceX, int referenceY) {
+        int width = getResources().getDisplayMetrics().widthPixels;
+        int x;
+        int y;
+        if (width >= 1000 && width <= 1050) {
+            x = referenceX;
+            y = referenceY;
+        } else {
+            int height = getResources().getDisplayMetrics().heightPixels;
+            x = Math.round(width * (referenceX / 1024f));
+            y = Math.round(height * (referenceY / 2048f));
+        }
+        Path path = new Path();
+        path.moveTo(x, y);
+        GestureDescription.StrokeDescription stroke =
+                new GestureDescription.StrokeDescription(path, 60, 180);
+        GestureDescription gesture =
+                new GestureDescription.Builder().addStroke(stroke).build();
+        return dispatchGesture(gesture, null, null);
     }
 
     private boolean tapReferencePoint(int referenceX, int referenceY) {
