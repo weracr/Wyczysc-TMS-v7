@@ -124,7 +124,9 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         // Lokalizacja jest jedynym ręcznym krokiem.
         if (isInitialLocationDialog(text)) {
             hideAutomationOverlay();
-            showInstruction(root, "Nadaj uprawnienie do lokalizacji\n\nWybierz: PODCZAS UŻYWANIA APLIKACJI", true);
+            showInstruction(
+        "Nadaj uprawnienie do lokalizacji\n\nWybierz: PODCZAS UŻYWANIA APLIKACJI"
+);
             return;
         }
 
