@@ -112,7 +112,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
 
         if ((MODE_FULL_REPAIR.equals(mode) || MODE_INSTALL_TMS.equals(mode))
                 && isInstallerScreen(pkg, text)) {
-            return Action.text("installer", 1100, installerButtons);
+            return Action.text("installer", 1400, installerButtons);
         }
 
         if (MODE_GRANT_TMS_PERMISSIONS.equals(mode)) {

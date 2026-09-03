@@ -606,18 +606,35 @@ public class MainActivity extends Activity {
         }
     }
 
+
+    private void openAdminRouteToTmsSettings() {
+        // buildAdminScreen() normalnie zeruje tryb, dlatego po zbudowaniu ekranu
+        // ustawiamy właściwy tryb ponownie.
+        buildAdminScreen();
+        setFlowMode(MODE_GRANT_TMS_PERMISSIONS);
+
+        handler.postDelayed(() -> {
+            setFlowMode(MODE_GRANT_TMS_PERMISSIONS);
+            openTmsSettings();
+        }, 1200);
+    }
+
     private void openTmsSettings() {
-        setFlowMode(MODE_DETAILS_ONLY);
+        if (!MODE_GRANT_TMS_PERMISSIONS.equals(getFlowMode())) {
+            setFlowMode(MODE_DETAILS_ONLY);
+        }
         Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
         intent.setData(Uri.parse("package:" + detectedTmsPackage));
         startActivity(intent);
     }
 
     private void grantTmsPermissionsAfterInstall() {
-        Toast.makeText(this,
-                "Ustawiam lokalizację TMS przed pierwszym uruchomieniem.",
-                Toast.LENGTH_LONG).show();
-        openTmsSettingsBeforeFirstLaunch();
+        Toast.makeText(
+                this,
+                "TMS zainstalowany. Otwieram ustawienia lokalizacji.",
+                Toast.LENGTH_LONG
+        ).show();
+        openAdminRouteToTmsSettings();
     }
 
 
