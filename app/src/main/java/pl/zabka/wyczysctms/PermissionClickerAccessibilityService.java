@@ -481,9 +481,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
                     screenWidth - okBounds.right, okBounds.height());
 
             TextView message = new TextView(this);
-            message.setText("Potwierdź naprawę TMS
-
-Wybierz jasny przycisk OK");
+            message.setText("Potwierdź naprawę TMS\n\nWybierz jasny przycisk OK");
             message.setTextColor(Color.WHITE);
             message.setTextSize(20);
             message.setGravity(Gravity.CENTER);
