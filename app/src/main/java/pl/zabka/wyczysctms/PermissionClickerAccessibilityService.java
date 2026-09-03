@@ -34,6 +34,8 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
     private boolean watcherRunning;
     private boolean actionPending;
     private long lastClickTime;
+    private boolean settingsCoordinatePending = false;
+    private String lastSettingsStage = "";
     private String pendingKey = "";
 
     private final List<String> installerButtons = Arrays.asList(
@@ -83,6 +85,16 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         String mode = getFlowMode();
         String pkg = root.getPackageName() == null ? "" : root.getPackageName().toString().toLowerCase();
         String text = normalize(collectText(root));
+        if ((MODE_FULL_REPAIR.equals(mode) || MODE_UNINSTALL_TMS.equals(mode))
+                && (text.contains("odinstalowac te aplikacje") || text.contains("odinstaluj"))) {
+            scheduleSettingsCoordinate("uninstall_ok", 861, 1169, 1500, 0);
+            return;
+        }
+
+        if (MODE_GRANT_TMS_PERMISSIONS.equals(mode)
+                && handlePm95SettingsCoordinates(text)) {
+            return;
+        }
 
         Action action = detectAction(mode, pkg, text);
         if (action == null) {
@@ -212,6 +224,83 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         GestureDescription gesture =
                 new GestureDescription.Builder().addStroke(stroke).build();
         return dispatchGesture(gesture, null, null);
+    }
+
+    private boolean handlePm95SettingsCoordinates(String rawText) {
+        String text = normalize(rawText);
+
+        // 1. Informacje o aplikacji -> Uprawnienia. Punkt ze screena: X=185 Y=1465.
+        if ((text.contains("informacje o aplikacji") || text.contains("app info"))
+                && text.contains("uprawnienia")
+                && (text.contains("tms") || text.contains("falcon") || text.contains("zabka"))) {
+            scheduleSettingsCoordinate("app_info_permissions", 185, 1465, 1600, 0);
+            return true;
+        }
+
+        // 2. Uprawnienia aplikacji -> Lokalizacja. Punkt ze screena: X=154 Y=1749.
+        if ((text.contains("uprawnienia aplikacji") || text.contains("app permissions"))
+                && text.contains("lokalizacja")) {
+            scheduleSettingsCoordinate("permissions_location", 154, 1749, 1600, 0);
+            return true;
+        }
+
+        // 3. Lokalizacja - dostep -> Zawsze zezwalaj. Punkt ze screena: X=112 Y=1145.
+        if ((text.contains("lokalizacja - dostep") || text.contains("location access"))
+                && text.contains("zawsze zezwalaj")) {
+            scheduleSettingsCoordinate("always_allow", 112, 1145, 1700, 2);
+            return true;
+        }
+
+        return false;
+    }
+
+    private void scheduleSettingsCoordinate(String stage, int x, int y,
+                                            long delayMs, int backsAfter) {
+        if (settingsCoordinatePending || stage.equals(lastSettingsStage)) return;
+        settingsCoordinatePending = true;
+        lastSettingsStage = stage;
+
+        handler.postDelayed(() -> {
+            try {
+                tapPhysicalPointPm95(x, y);
+                markClicked();
+
+                if (backsAfter > 0) {
+                    handler.postDelayed(() -> {
+                        performGlobalAction(GLOBAL_ACTION_BACK);
+                        handler.postDelayed(() -> {
+                            performGlobalAction(GLOBAL_ACTION_BACK);
+                            handler.postDelayed(this::launchTmsFromService, 1000);
+                        }, 900);
+                    }, 1500);
+                }
+            } finally {
+                settingsCoordinatePending = false;
+                handler.postDelayed(() -> lastSettingsStage = "", 1200);
+            }
+        }, delayMs);
+    }
+
+    private boolean tapPhysicalPointPm95(int x, int y) {
+        Path path = new Path();
+        path.moveTo(x, y);
+        GestureDescription.StrokeDescription stroke =
+                new GestureDescription.StrokeDescription(path, 80, 180);
+        GestureDescription gesture =
+                new GestureDescription.Builder().addStroke(stroke).build();
+        return dispatchGesture(gesture, null, null);
+    }
+
+    private void launchTmsFromService() {
+        Intent launch = getPackageManager().getLaunchIntentForPackage("pl.optidata.tms_android_2017");
+        if (launch == null) {
+            setFlowMode(MODE_IDLE);
+            Toast.makeText(this, "Nie znaleziono aplikacji TMS.", Toast.LENGTH_LONG).show();
+            return;
+        }
+        setFlowMode(MODE_OPEN_TMS);
+        launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        startActivity(launch);
     }
 
     private boolean clickVisibleText(AccessibilityNodeInfo root, List<String> labels) {

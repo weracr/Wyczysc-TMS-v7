@@ -614,11 +614,9 @@ public class MainActivity extends Activity {
     }
 
     private void grantTmsPermissionsAfterInstall() {
-        Toast.makeText(
-                this,
-                "Najpierw ustawiam lokalizację TMS, potem uruchomię aplikację.",
-                Toast.LENGTH_LONG
-        ).show();
+        Toast.makeText(this,
+                "Ustawiam lokalizację TMS przed pierwszym uruchomieniem.",
+                Toast.LENGTH_LONG).show();
         openTmsSettingsBeforeFirstLaunch();
     }
 
