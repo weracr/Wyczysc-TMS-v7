@@ -4,30 +4,16 @@ import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.GestureDescription;
 import android.graphics.Path;
 import android.graphics.Rect;
-import android.graphics.Color;
-import android.graphics.PixelFormat;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.accessibility.AccessibilityEvent;
-import android.view.Gravity;
-import android.view.View;
-import android.view.WindowManager;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.widget.Toast;
-import android.widget.TextView;
 
 import java.util.Arrays;
 import java.util.List;
 
 public class PermissionClickerAccessibilityService extends AccessibilityService {
-
-    private WindowManager uninstallOverlayWindowManager;
-    private View uninstallOverlayTop;
-    private View uninstallOverlayBottom;
-    private View uninstallOverlayLeft;
-    private View uninstallOverlayRight;
-    private TextView uninstallOverlayMessage;
-
 
     private static final String PREFS_NAME = "wyczysctms_prefs";
     private static final String KEY_FLOW_MODE = "flow_mode";
@@ -69,7 +55,6 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
 
     @Override
     public void onInterrupt() {
-        hideManualUninstallOverlay();
         handler.removeCallbacksAndMessages(null);
         watcherRunning = false;
         actionPending = false;
@@ -98,15 +83,6 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         String packageName = root.getPackageName() == null
                 ? "" : root.getPackageName().toString().toLowerCase();
         String text = normalize(collectText(root));
-
-        // Build 149: wszystkie automatyczne kliknięcia pozostają bez zmian.
-        // Tylko potwierdzenie odinstalowania wykonuje kierowca przez jasny przycisk OK.
-        if (isManualUninstallDialog(text)) {
-            showManualUninstallOverlay(root);
-            return;
-        } else {
-            hideManualUninstallOverlay();
-        }
 
         ScreenAction action = detectAction(mode, packageName, text);
         if (action == null) {
@@ -436,133 +412,4 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
             return new ScreenAction(key, delayMs, null, referenceX, referenceY, backAfterTap);
         }
     }
-    private boolean isManualUninstallDialog(String rawText) {
-        String text = normalize(rawText);
-        return (text.contains("odinstalowac te aplikacje")
-                || text.contains("odinstaluj")
-                || text.contains("uninstall"))
-                && (text.contains("tms") || text.contains("falcon") || text.contains("zabka"));
-    }
-
-    private void showManualUninstallOverlay(AccessibilityNodeInfo root) {
-        if (uninstallOverlayMessage != null) return;
-        try {
-            if (uninstallOverlayWindowManager == null) {
-                uninstallOverlayWindowManager =
-                        (WindowManager) getSystemService(WINDOW_SERVICE);
-            }
-
-            int screenWidth = getResources().getDisplayMetrics().widthPixels;
-            int screenHeight = getResources().getDisplayMetrics().heightPixels;
-            Rect okBounds = findUninstallOkBounds(root);
-
-            if (okBounds == null || okBounds.isEmpty()) {
-                // Fallback dla PM95 na podstawie pełnego ekranu 1024x2048.
-                okBounds = new Rect(
-                        Math.round(screenWidth * 0.70f),
-                        Math.round(screenHeight * 0.50f),
-                        Math.round(screenWidth * 0.98f),
-                        Math.round(screenHeight * 0.63f));
-            } else {
-                okBounds.inset(-dpUninstall(18), -dpUninstall(12));
-                okBounds.left = Math.max(0, okBounds.left);
-                okBounds.top = Math.max(0, okBounds.top);
-                okBounds.right = Math.min(screenWidth, okBounds.right);
-                okBounds.bottom = Math.min(screenHeight, okBounds.bottom);
-            }
-
-            uninstallOverlayTop = addUninstallDim(0, 0, screenWidth, okBounds.top);
-            uninstallOverlayBottom = addUninstallDim(
-                    0, okBounds.bottom, screenWidth, screenHeight - okBounds.bottom);
-            uninstallOverlayLeft = addUninstallDim(
-                    0, okBounds.top, okBounds.left, okBounds.height());
-            uninstallOverlayRight = addUninstallDim(
-                    okBounds.right, okBounds.top,
-                    screenWidth - okBounds.right, okBounds.height());
-
-            TextView message = new TextView(this);
-            message.setText("Potwierdź naprawę TMS\n\nWybierz jasny przycisk OK");
-            message.setTextColor(Color.WHITE);
-            message.setTextSize(20);
-            message.setGravity(Gravity.CENTER);
-            message.setPadding(dpUninstall(24), dpUninstall(18),
-                    dpUninstall(24), dpUninstall(18));
-            message.setBackgroundColor(Color.rgb(0, 168, 107));
-
-            WindowManager.LayoutParams messageParams = new WindowManager.LayoutParams(
-                    WindowManager.LayoutParams.MATCH_PARENT,
-                    WindowManager.LayoutParams.WRAP_CONTENT,
-                    WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-                            | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
-                            | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
-                    PixelFormat.TRANSLUCENT);
-            messageParams.gravity = Gravity.BOTTOM;
-            messageParams.y = dpUninstall(70);
-            uninstallOverlayWindowManager.addView(message, messageParams);
-            uninstallOverlayMessage = message;
-        } catch (Exception ignored) {
-            hideManualUninstallOverlay();
-        }
-    }
-
-    private Rect findUninstallOkBounds(AccessibilityNodeInfo root) {
-        if (root == null) return null;
-        for (String label : new String[]{"OK", "Ok", "Odinstaluj", "Uninstall"}) {
-            List<AccessibilityNodeInfo> nodes =
-                    root.findAccessibilityNodeInfosByText(label);
-            if (nodes == null) continue;
-            for (AccessibilityNodeInfo node : nodes) {
-                if (node == null || !node.isVisibleToUser()) continue;
-                Rect bounds = new Rect();
-                node.getBoundsInScreen(bounds);
-                if (!bounds.isEmpty()) return bounds;
-            }
-        }
-        return null;
-    }
-
-    private View addUninstallDim(int x, int y, int width, int height) {
-        if (width <= 0 || height <= 0) return null;
-        View dim = new View(this);
-        dim.setBackgroundColor(Color.argb(242, 4, 8, 14));
-        WindowManager.LayoutParams params = new WindowManager.LayoutParams(
-                width, height,
-                WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-                        | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
-                        | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
-                PixelFormat.TRANSLUCENT);
-        params.gravity = Gravity.TOP | Gravity.START;
-        params.x = x;
-        params.y = y;
-        uninstallOverlayWindowManager.addView(dim, params);
-        return dim;
-    }
-
-    private void hideManualUninstallOverlay() {
-        removeUninstallView(uninstallOverlayTop);
-        removeUninstallView(uninstallOverlayBottom);
-        removeUninstallView(uninstallOverlayLeft);
-        removeUninstallView(uninstallOverlayRight);
-        removeUninstallView(uninstallOverlayMessage);
-        uninstallOverlayTop = null;
-        uninstallOverlayBottom = null;
-        uninstallOverlayLeft = null;
-        uninstallOverlayRight = null;
-        uninstallOverlayMessage = null;
-    }
-
-    private void removeUninstallView(View view) {
-        if (view == null || uninstallOverlayWindowManager == null) return;
-        try {
-            uninstallOverlayWindowManager.removeView(view);
-        } catch (Exception ignored) {
-        }
-    }
-
-    private int dpUninstall(int value) {
-        return (int) (value * getResources().getDisplayMetrics().density + 0.5f);
-    }
-
 }
