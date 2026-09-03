@@ -28,7 +28,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
 
     private static final String TMS_PACKAGE = "pl.optidata.tms_android_2017";
     private static final long POLL_MS = 450;
-    private static final long CLICK_GUARD_MS = 1200;
+    private static final long CLICK_GUARD_MS = 800;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private boolean watcherRunning;
@@ -229,29 +229,68 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
     private boolean handlePm95SettingsCoordinates(String rawText) {
         String text = normalize(rawText);
 
-        // 1. Informacje o aplikacji -> Uprawnienia. Punkt ze screena: X=185 Y=1465.
         if ((text.contains("informacje o aplikacji") || text.contains("app info"))
                 && text.contains("uprawnienia")
                 && (text.contains("tms") || text.contains("falcon") || text.contains("zabka"))) {
-            scheduleSettingsCoordinate("app_info_permissions", 185, 1465, 1600, 0);
+            scheduleSettingsTextOrCoordinate(
+                    "app_info_permissions",
+                    Arrays.asList("Uprawnienia", "Permissions", "Brak przyznanych uprawnień", "Brak przyznanych uprawnien"),
+                    185, 1465, 1600, 0);
             return true;
         }
 
-        // 2. Uprawnienia aplikacji -> Lokalizacja. Punkt ze screena: X=154 Y=1749.
         if ((text.contains("uprawnienia aplikacji") || text.contains("app permissions"))
                 && text.contains("lokalizacja")) {
-            scheduleSettingsCoordinate("permissions_location", 154, 1749, 1600, 0);
+            scheduleSettingsTextOrCoordinate(
+                    "permissions_location",
+                    Arrays.asList("Lokalizacja", "Location"),
+                    154, 1749, 1600, 0);
             return true;
         }
 
-        // 3. Lokalizacja - dostep -> Zawsze zezwalaj. Punkt ze screena: X=112 Y=1145.
         if ((text.contains("lokalizacja - dostep") || text.contains("location access"))
                 && text.contains("zawsze zezwalaj")) {
-            scheduleSettingsCoordinate("always_allow", 112, 1145, 1700, 2);
+            scheduleSettingsTextOrCoordinate(
+                    "always_allow",
+                    Arrays.asList("Zawsze zezwalaj", "Allow all the time", "Always allow"),
+                    112, 1145, 1700, 2);
             return true;
         }
 
         return false;
+    }
+
+    private void scheduleSettingsTextOrCoordinate(String stage, List<String> labels,
+                                                  int x, int y, long delayMs, int backsAfter) {
+        if (settingsCoordinatePending || stage.equals(lastSettingsStage)) return;
+        settingsCoordinatePending = true;
+        lastSettingsStage = stage;
+
+        handler.postDelayed(() -> {
+            try {
+                AccessibilityNodeInfo current = getRootInActiveWindow();
+                boolean clicked = current != null && clickVisibleText(current, labels);
+                if (!clicked) {
+                    clicked = tapPhysicalPointPm95(x, y);
+                }
+
+                if (clicked) {
+                    markClicked();
+                    if (backsAfter > 0) {
+                        handler.postDelayed(() -> {
+                            performGlobalAction(GLOBAL_ACTION_BACK);
+                            handler.postDelayed(() -> {
+                                performGlobalAction(GLOBAL_ACTION_BACK);
+                                handler.postDelayed(this::launchTmsFromService, 1000);
+                            }, 900);
+                        }, 1500);
+                    }
+                }
+            } finally {
+                settingsCoordinatePending = false;
+                handler.postDelayed(() -> lastSettingsStage = "", 900);
+            }
+        }, delayMs);
     }
 
     private void scheduleSettingsCoordinate(String stage, int x, int y,
@@ -396,10 +435,16 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
     }
 
     private boolean isInstallerScreen(String pkg, String text) {
-        boolean installer = pkg.contains("packageinstaller") || pkg.contains("permissioncontroller");
-        boolean action = text.contains("zainstaluj") || text.contains("instaluj")
-                || text.contains("install") || text.contains("gotowe") || text.contains("done");
-        return installer && action && !text.contains("odinstaluj") && !text.contains("uninstall");
+        boolean installing = text.contains("zainstaluj")
+                || text.contains("instaluj")
+                || text.contains("install")
+                || text.contains("aktualizuj")
+                || text.contains("update");
+        boolean finished = text.contains("gotowe")
+                || text.contains("done");
+        return (installing || finished)
+                && !text.contains("odinstaluj")
+                && !text.contains("uninstall");
     }
 
     private boolean isRuntimePermissionDialog(String pkg, String text) {

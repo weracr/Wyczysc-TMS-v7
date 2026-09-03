@@ -277,7 +277,7 @@ public class MainActivity extends Activity {
     private void showRepairDialog() {
         new AlertDialog.Builder(this)
                 .setTitle("Naprawa TMS")
-                .setMessage("Aplikacja odinstaluje TMS, zainstaluje najnowszą wersję APK z Download, spróbuje nadać uprawnienia programowo, a jeśli Android na to nie pozwoli, uruchomi flow przez ustawienia.")
+                .setMessage("Aplikacja odinstaluje TMS, zainstaluje najnowszą wersję APK z Download, ustawi lokalizację w Ustawieniach i uruchomi TMS, aby nadać pozostałe zgody.")
                 .setPositiveButton("Napraw TMS", (d, w) -> repairTms())
                 .setNegativeButton("Anuluj", null)
                 .show();
@@ -606,19 +606,6 @@ public class MainActivity extends Activity {
         }
     }
 
-
-    private void openAdminRouteToTmsSettings() {
-        // buildAdminScreen() normalnie zeruje tryb, dlatego po zbudowaniu ekranu
-        // ustawiamy właściwy tryb ponownie.
-        buildAdminScreen();
-        setFlowMode(MODE_GRANT_TMS_PERMISSIONS);
-
-        handler.postDelayed(() -> {
-            setFlowMode(MODE_GRANT_TMS_PERMISSIONS);
-            openTmsSettings();
-        }, 1200);
-    }
-
     private void openTmsSettings() {
         if (!MODE_GRANT_TMS_PERMISSIONS.equals(getFlowMode())) {
             setFlowMode(MODE_DETAILS_ONLY);
@@ -629,12 +616,14 @@ public class MainActivity extends Activity {
     }
 
     private void grantTmsPermissionsAfterInstall() {
-        Toast.makeText(
-                this,
-                "TMS zainstalowany. Otwieram ustawienia lokalizacji.",
-                Toast.LENGTH_LONG
-        ).show();
-        openAdminRouteToTmsSettings();
+        Toast.makeText(this,
+                "TMS zainstalowany. Otwieram ustawienia uprawnień.",
+                Toast.LENGTH_LONG).show();
+        setFlowMode(MODE_GRANT_TMS_PERMISSIONS);
+        handler.postDelayed(() -> {
+            setFlowMode(MODE_GRANT_TMS_PERMISSIONS);
+            openTmsSettings();
+        }, 1400);
     }
 
 
