@@ -2,7 +2,6 @@ package pl.zabka.wyczysctms;
 
 import android.Manifest;
 import android.app.Activity;
-import android.app.ActivityManager;
 import android.app.AlertDialog;
 import android.app.admin.DevicePolicyManager;
 import android.content.ComponentName;
@@ -109,6 +108,7 @@ public class MainActivity extends Activity {
     }
 
     private void buildDriverScreen() {
+        clearFlowMode();
 
         ScrollView scroll = new ScrollView(this);
         LinearLayout root = new LinearLayout(this);
@@ -166,6 +166,7 @@ public class MainActivity extends Activity {
     }
 
     private void buildAdminScreen() {
+        clearFlowMode();
 
         ScrollView scroll = new ScrollView(this);
         LinearLayout root = new LinearLayout(this);
@@ -276,7 +277,7 @@ public class MainActivity extends Activity {
     private void showRepairDialog() {
         new AlertDialog.Builder(this)
                 .setTitle("Naprawa TMS")
-                .setMessage("Aplikacja odinstaluje TMS, zainstaluje najnowszą wersję APK z Download, ustawi lokalizację w Ustawieniach i uruchomi TMS, aby nadać pozostałe zgody.")
+                .setMessage("Aplikacja odinstaluje TMS, zainstaluje najnowszą wersję APK z Download, spróbuje nadać uprawnienia programowo, a jeśli Android na to nie pozwoli, uruchomi flow przez ustawienia.")
                 .setPositiveButton("Napraw TMS", (d, w) -> repairTms())
                 .setNegativeButton("Anuluj", null)
                 .show();
@@ -471,7 +472,6 @@ public class MainActivity extends Activity {
     }
 
     private void repairTms() {
-        closeTmsBeforeRepair();
         clearFlowMode();
         setFlowMode(MODE_FULL_REPAIR);
         grantPermissionsAfterInstall = true;
@@ -500,21 +500,6 @@ public class MainActivity extends Activity {
             Toast.makeText(this, "TMS nie jest zainstalowany. Uruchamiam instalację.", Toast.LENGTH_LONG).show();
             installNewestTmsFromDownload();
         }
-    }
-
-
-    private void closeTmsBeforeRepair() {
-        try {
-            ActivityManager activityManager =
-                    (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
-            if (activityManager != null) {
-                activityManager.killBackgroundProcesses(detectedTmsPackage);
-            }
-        } catch (Exception ignored) {
-        }
-        Toast.makeText(this,
-                "Przed naprawą aplikacja TMS powinna być zamknięta. Rozpoczynam bezpieczną naprawę.",
-                Toast.LENGTH_LONG).show();
     }
 
     private void uninstallTms() {
@@ -622,39 +607,23 @@ public class MainActivity extends Activity {
     }
 
     private void openTmsSettings() {
-        if (!MODE_GRANT_TMS_PERMISSIONS.equals(getFlowMode())) {
-            setFlowMode(MODE_DETAILS_ONLY);
-        }
+        setFlowMode(MODE_DETAILS_ONLY);
         Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
         intent.setData(Uri.parse("package:" + detectedTmsPackage));
         startActivity(intent);
     }
 
     private void grantTmsPermissionsAfterInstall() {
-        Toast.makeText(this,
-                "Uruchamiam TMS i nadaję pozostałe zgody.",
-                Toast.LENGTH_LONG).show();
-        launchTmsForRuntimePermissions();
-    }
+        boolean grantedByPolicy = grantTmsPermissionsByPolicy();
 
-
-    private void openTmsSettingsBeforeFirstLaunch() {
-        setFlowMode(MODE_GRANT_TMS_PERMISSIONS);
-
-        try {
-            Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
-            intent.setData(Uri.parse("package:" + detectedTmsPackage));
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
-            startActivity(intent);
-        } catch (Exception e) {
+        if (grantedByPolicy) {
             clearFlowMode();
-            Toast.makeText(
-                    this,
-                    "Nie można otworzyć ustawień TMS: " + e.getMessage(),
-                    Toast.LENGTH_LONG
-            ).show();
+            Toast.makeText(this, "Gotowe. Uprawnienia zostały nadane. Można uruchomić TMS.", Toast.LENGTH_LONG).show();
+            return;
         }
+
+        Toast.makeText(this, "Uruchamiam TMS i nadaję zgody po kolei.", Toast.LENGTH_LONG).show();
+        launchTmsForRuntimePermissions();
     }
 
     private void launchTmsForRuntimePermissions() {
