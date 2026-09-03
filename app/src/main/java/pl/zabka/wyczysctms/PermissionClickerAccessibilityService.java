@@ -37,6 +37,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
 
     private boolean watcherRunning;
     private boolean clickPending;
+    private boolean alwaysAllowPending = false;
     private String pendingKey = "";
 
     private WindowManager windowManager;
@@ -131,7 +132,8 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
 
         // Końcowa lokalizacja także ręcznie, ponieważ to ustawienie systemowe.
         if (isAlwaysLocationScreen(text)) {
-            showInstruction("Nadaj uprawnienie do lokalizacji\n\nWybierz: ZAWSZE ZEZWALAJ\ni naciśnij WSTECZ");
+            hideInstruction();
+            clickAlwaysAllowAndReturn(root);
             return;
         }
 
@@ -289,6 +291,81 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         }
         instructionOverlay = null;
         overlayMessage = "";
+    }
+
+    private void clickAlwaysAllowAndReturn(AccessibilityNodeInfo root) {
+        if (alwaysAllowPending) return;
+        alwaysAllowPending = true;
+
+        handler.postDelayed(() -> {
+            AccessibilityNodeInfo current = getRootInActiveWindow();
+            if (current == null) {
+                alwaysAllowPending = false;
+                return;
+            }
+
+            boolean clicked = clickVisibleText(current, Arrays.asList(
+                    "Zawsze zezwalaj",
+                    "Allow all the time",
+                    "Always allow"
+            ));
+
+            if (!clicked) {
+                Rect target = findBoundsByText(current, Arrays.asList(
+                        "Zawsze zezwalaj",
+                        "Allow all the time",
+                        "Always allow"
+                ));
+                if (target != null && !target.isEmpty()) {
+                    clicked = tapGesture(target.centerX(), target.centerY());
+                }
+            }
+
+            if (!clicked) {
+                // Sprawdzony punkt z działającej gałęzi v82-v89 na PM95.
+                clicked = tapGesture(112, 1145);
+            }
+
+            if (clicked) {
+                handler.postDelayed(() -> {
+                    performGlobalAction(GLOBAL_ACTION_BACK);
+                    alwaysAllowPending = false;
+                    Toast.makeText(this,
+                            "Lokalizacja ustawiona. Wracam do TMS.",
+                            Toast.LENGTH_SHORT).show();
+                }, 1400);
+            } else {
+                alwaysAllowPending = false;
+            }
+        }, 1500);
+    }
+
+    private Rect findBoundsByText(AccessibilityNodeInfo root, List<String> labels) {
+        if (root == null) return null;
+        for (String label : labels) {
+            List<AccessibilityNodeInfo> nodes = root.findAccessibilityNodeInfosByText(label);
+            if (nodes == null) continue;
+            for (AccessibilityNodeInfo node : nodes) {
+                if (node == null || !node.isVisibleToUser()) continue;
+                Rect bounds = new Rect();
+                node.getBoundsInScreen(bounds);
+                if (!bounds.isEmpty()) return bounds;
+            }
+        }
+        return null;
+    }
+
+    private boolean tapGesture(int x, int y) {
+        if (x <= 0 || y <= 0) return false;
+        android.graphics.Path path = new android.graphics.Path();
+        path.moveTo(x, y);
+        android.accessibilityservice.GestureDescription.StrokeDescription stroke =
+                new android.accessibilityservice.GestureDescription.StrokeDescription(path, 80, 180);
+        android.accessibilityservice.GestureDescription gesture =
+                new android.accessibilityservice.GestureDescription.Builder()
+                        .addStroke(stroke)
+                        .build();
+        return dispatchGesture(gesture, null, null);
     }
 
     private boolean isUninstallDialog(String text) {
