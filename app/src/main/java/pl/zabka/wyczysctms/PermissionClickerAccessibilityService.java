@@ -1,14 +1,18 @@
 package pl.zabka.wyczysctms;
 
 import android.accessibilityservice.AccessibilityService;
-import android.accessibilityservice.GestureDescription;
-import android.content.Intent;
-import android.graphics.Path;
+import android.graphics.Color;
+import android.graphics.PixelFormat;
 import android.graphics.Rect;
 import android.os.Handler;
 import android.os.Looper;
+import android.view.Gravity;
+import android.view.View;
+import android.view.WindowManager;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
+import android.widget.FrameLayout;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import java.util.Arrays;
@@ -26,17 +30,18 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
     private static final String MODE_OPEN_TMS = "OPEN_TMS_FLOW";
     private static final String MODE_GRANT_TMS_PERMISSIONS = "GRANT_TMS_PERMISSIONS_FLOW";
 
-    private static final String TMS_PACKAGE = "pl.optidata.tms_android_2017";
     private static final long POLL_MS = 450;
-    private static final long CLICK_GUARD_MS = 800;
+    private static final long CLICK_DELAY_MS = 1200;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
+
     private boolean watcherRunning;
-    private boolean actionPending;
-    private long lastClickTime;
-    private boolean settingsCoordinatePending = false;
-    private String lastSettingsStage = "";
+    private boolean clickPending;
     private String pendingKey = "";
+
+    private WindowManager windowManager;
+    private View instructionOverlay;
+    private String overlayMessage = "";
 
     private final List<String> installerButtons = Arrays.asList(
             "Gotowe", "Done", "Zainstaluj", "Instaluj", "Aktualizuj", "Zaktualizuj",
@@ -58,9 +63,10 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
 
     @Override
     public void onInterrupt() {
+        hideInstruction();
         handler.removeCallbacksAndMessages(null);
         watcherRunning = false;
-        actionPending = false;
+        clickPending = false;
         pendingKey = "";
     }
 
@@ -83,343 +89,94 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         if (root == null) return;
 
         String mode = getFlowMode();
-        String pkg = root.getPackageName() == null ? "" : root.getPackageName().toString().toLowerCase();
+        String pkg = root.getPackageName() == null
+                ? "" : root.getPackageName().toString().toLowerCase();
         String text = normalize(collectText(root));
 
-        // PM95: wymuszone, pojedyncze etapy po treści ekranu.
-        if ((MODE_FULL_REPAIR.equals(mode) || MODE_INSTALL_TMS.equals(mode))
-                && text.contains("aplikacja zostala zainstalowana")
-                && text.contains("gotowe")) {
-            forceStageTap("installer_done", 650, 1180, 1300, 0);
-            return;
-        }
-
-        if (MODE_GRANT_TMS_PERMISSIONS.equals(mode)
-                && (text.contains("informacje o aplikacji") || text.contains("app info"))
-                && text.contains("uprawnienia")) {
-            forceStageTap("app_info_permissions", 185, 1465, 1400, 0);
-            return;
-        }
-
-        if (MODE_GRANT_TMS_PERMISSIONS.equals(mode)
-                && (text.contains("uprawnienia aplikacji") || text.contains("app permissions"))
-                && text.contains("lokalizacja")) {
-            forceStageTap("permissions_location", 154, 1749, 1400, 0);
-            return;
-        }
-
-        if (MODE_GRANT_TMS_PERMISSIONS.equals(mode)
-                && text.contains("zawsze zezwalaj")
-                && text.contains("zezwalaj tylko podczas uzywania aplikacji")) {
-            forceStageTap("always_allow", 112, 1145, 1500, 2);
-            return;
-        }
         if ((MODE_FULL_REPAIR.equals(mode) || MODE_UNINSTALL_TMS.equals(mode))
-                && (text.contains("odinstalowac te aplikacje") || text.contains("odinstaluj"))) {
-            forceStageTap("uninstall_ok", 861, 1169, 1400, 0);
+                && isUninstallDialog(text)) {
+            hideInstruction();
+            scheduleClick("uninstall", Arrays.asList("OK", "Ok", "Odinstaluj", "Uninstall"), 1400);
             return;
-        }
-
-        if (MODE_GRANT_TMS_PERMISSIONS.equals(mode)
-                && handlePm95SettingsCoordinates(text)) {
-            return;
-        }
-
-        Action action = detectAction(mode, pkg, text);
-        if (action == null) {
-            pendingKey = "";
-            return;
-        }
-        scheduleAction(action);
-    }
-
-    private boolean forcedStagePending = false;
-    private String forcedStageKey = "";
-
-    private void forceStageTap(String key, int x, int y, long delayMs, int backsAfter) {
-        if (forcedStagePending || key.equals(forcedStageKey)) return;
-        forcedStagePending = true;
-        forcedStageKey = key;
-
-        handler.postDelayed(() -> {
-            Path path = new Path();
-            path.moveTo(x, y);
-            GestureDescription.StrokeDescription stroke =
-                    new GestureDescription.StrokeDescription(path, 80, 220);
-            GestureDescription gesture =
-                    new GestureDescription.Builder().addStroke(stroke).build();
-
-            dispatchGesture(gesture, new GestureResultCallback() {
-                @Override
-                public void onCompleted(GestureDescription gestureDescription) {
-                    forcedStagePending = false;
-                    lastClickTime = System.currentTimeMillis();
-                    if (backsAfter > 0) {
-                        handler.postDelayed(() -> {
-                            performGlobalAction(GLOBAL_ACTION_BACK);
-                            handler.postDelayed(() -> {
-                                performGlobalAction(GLOBAL_ACTION_BACK);
-                                handler.postDelayed(thisService()::launchTmsFromService, 1000);
-                            }, 900);
-                        }, 1400);
-                    }
-                    handler.postDelayed(() -> forcedStageKey = "", 900);
-                }
-
-                @Override
-                public void onCancelled(GestureDescription gestureDescription) {
-                    forcedStagePending = false;
-                    handler.postDelayed(() -> forcedStageKey = "", 500);
-                }
-            }, null);
-        }, delayMs);
-    }
-
-    private PermissionClickerAccessibilityService thisService() {
-        return this;
-    }
-
-    private Action detectAction(String mode, String pkg, String text) {
-        if ((MODE_FULL_REPAIR.equals(mode) || MODE_UNINSTALL_TMS.equals(mode))
-                && isUninstallDialog(pkg, text)) {
-            return Action.textWithFallback("uninstall", 1500, Arrays.asList("OK", "Ok", "Odinstaluj", "Uninstall"), 861, 1169);
         }
 
         if ((MODE_FULL_REPAIR.equals(mode) || MODE_INSTALL_TMS.equals(mode))
-                && isInstallerScreen(pkg, text)) {
-            return Action.text("installer", 1400, installerButtons);
+                && isInstallerScreen(text)) {
+            hideInstruction();
+            scheduleClick("installer", installerButtons, 1200);
+            return;
         }
 
-        if (MODE_GRANT_TMS_PERMISSIONS.equals(mode)) {
-            if (isAppInfoScreen(pkg, text)) {
-                return Action.text("app_info_permissions", 1400,
-                        Arrays.asList("Uprawnienia", "Permissions", "Zezwolenia"));
-            }
-
-            if (isPermissionsListScreen(pkg, text)) {
-                return Action.text("permissions_location", 1400,
-                        Arrays.asList("Lokalizacja", "Location"));
-            }
-
-            if (isLocationSettingsScreen(pkg, text)) {
-                return Action.text("always_location", 1500,
-                        Arrays.asList("Zawsze zezwalaj", "Allow all the time", "Always allow"));
-            }
+        if (!MODE_OPEN_TMS.equals(mode) && !MODE_GRANT_TMS_PERMISSIONS.equals(mode)) {
+            hideInstruction();
+            return;
         }
 
-        if (!MODE_OPEN_TMS.equals(mode)) return null;
-
-        // Gdy lokalizacja została ustawiona wcześniej, to okno nie powinno się pojawić.
-        // Zostawiamy bezpieczny fallback po tekście.
+        // Lokalizacja jest jedynym ręcznym krokiem.
         if (isInitialLocationDialog(text)) {
-            return Action.text("initial_location_fallback", 1800,
-                    Arrays.asList("Podczas używania aplikacji", "Podczas uzywania aplikacji", "While using the app"));
+            showInstruction("Nadaj uprawnienie do lokalizacji\n\nWybierz: PODCZAS UŻYWANIA APLIKACJI");
+            return;
         }
 
-        if (text.contains("robienie zdjec") && text.contains("nagrywanie filmow")) {
-            return Action.text("camera", 1500,
-                    Arrays.asList("Podczas używania aplikacji", "Podczas uzywania aplikacji", "While using the app"));
+        // Po ręcznym kliknięciu pierwszej lokalizacji automat kontynuuje.
+        if (isTmsLocationUpdatePopup(text)) {
+            hideInstruction();
+            scheduleClick("location_update", Arrays.asList(
+                    "ZAKTUALIZUJ USTAWIENIA", "Zaktualizuj ustawienia",
+                    "AKTUALIZUJ USTAWIENIA", "Aktualizuj ustawienia",
+                    "UPDATE SETTINGS", "Update settings"
+            ), 1200);
+            return;
         }
+
+        // Końcowa lokalizacja także ręcznie, ponieważ to ustawienie systemowe.
+        if (isAlwaysLocationScreen(text)) {
+            showInstruction("Nadaj uprawnienie do lokalizacji\n\nWybierz: ZAWSZE ZEZWALAJ\ni naciśnij WSTECZ");
+            return;
+        }
+
+        hideInstruction();
 
         if (text.contains("potwierdz") || text.contains("confirm")) {
-            return Action.text("confirm", 1000,
-                    Arrays.asList("Potwierdź", "Potwierdz", "Confirm", "OK", "Ok"));
+            scheduleClick("confirm", Arrays.asList("Potwierdź", "Potwierdz", "Confirm", "OK", "Ok"), 900);
+            return;
+        }
+
+        if (isCameraDialog(text)) {
+            scheduleClick("camera", Arrays.asList(
+                    "Podczas używania aplikacji", "Podczas uzywania aplikacji",
+                    "Podczas korzystania z aplikacji", "While using the app"
+            ), 1300);
+            return;
         }
 
         if (isRuntimePermissionDialog(pkg, text)) {
-            return Action.text("runtime_allow", 1100,
-                    Arrays.asList("Zezwól", "Zezwol", "Zezwalaj", "Allow"));
+            scheduleClick("runtime_allow", Arrays.asList("Zezwól", "Zezwol", "Zezwalaj", "Allow"), 1000);
         }
-
-        return null;
     }
 
-    private void scheduleAction(Action action) {
-        if (actionPending || action.key.equals(pendingKey)) return;
-        actionPending = true;
-        pendingKey = action.key;
+    private void scheduleClick(String key, List<String> labels, long delayMs) {
+        if (clickPending || key.equals(pendingKey)) return;
+        clickPending = true;
+        pendingKey = key;
 
         handler.postDelayed(() -> {
             boolean clicked = false;
             try {
-                AccessibilityNodeInfo current = getRootInActiveWindow();
-                if (current == null) return;
-
-                String pkg = current.getPackageName() == null ? "" : current.getPackageName().toString().toLowerCase();
-                String text = normalize(collectText(current));
-                Action stillCurrent = detectAction(getFlowMode(), pkg, text);
-                if (stillCurrent == null || !stillCurrent.key.equals(action.key)) return;
-
-                clicked = clickVisibleText(current, action.labels);
-                if (!clicked && action.referenceX > 0 && action.referenceY > 0) {
-                    clicked = tapPhysicalPoint(action.referenceX, action.referenceY);
-                }
-                if (clicked) {
-                    markClicked();
-                    if ("always_location".equals(action.key)) {
-                        handler.postDelayed(this::finishSettingsAndLaunchTms, 1600);
-                    }
-                }
+                AccessibilityNodeInfo root = getRootInActiveWindow();
+                if (root != null) clicked = clickVisibleText(root, labels);
             } finally {
-                actionPending = false;
+                clickPending = false;
                 if (!clicked) {
-                    handler.postDelayed(() -> pendingKey = "", 900);
+                    handler.postDelayed(() -> pendingKey = "", 700);
+                } else {
+                    handler.postDelayed(() -> pendingKey = "", 1200);
                 }
-            }
-        }, action.delayMs);
-    }
-
-    private void finishSettingsAndLaunchTms() {
-        // Lokalizacja jest na osobnej podstronie. Wracamy do listy i do App Info.
-        performGlobalAction(GLOBAL_ACTION_BACK);
-        handler.postDelayed(() -> {
-            performGlobalAction(GLOBAL_ACTION_BACK);
-            handler.postDelayed(this::launchTms, 1000);
-        }, 900);
-    }
-
-    private void launchTms() {
-        Intent launch = getPackageManager().getLaunchIntentForPackage(TMS_PACKAGE);
-        if (launch == null) {
-            setFlowMode(MODE_IDLE);
-            Toast.makeText(this, "Nie znaleziono aplikacji TMS.", Toast.LENGTH_LONG).show();
-            return;
-        }
-        setFlowMode(MODE_OPEN_TMS);
-        launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-        startActivity(launch);
-    }
-
-    private boolean tapPhysicalPoint(int x, int y) {
-        if (!canClickNow()) return false;
-        Path path = new Path();
-        path.moveTo(x, y);
-        GestureDescription.StrokeDescription stroke =
-                new GestureDescription.StrokeDescription(path, 80, 180);
-        GestureDescription gesture =
-                new GestureDescription.Builder().addStroke(stroke).build();
-        return dispatchGesture(gesture, null, null);
-    }
-
-    private boolean handlePm95SettingsCoordinates(String rawText) {
-        String text = normalize(rawText);
-
-        if ((text.contains("informacje o aplikacji") || text.contains("app info"))
-                && text.contains("uprawnienia")
-                && (text.contains("tms") || text.contains("falcon") || text.contains("zabka"))) {
-            scheduleSettingsTextOrCoordinate(
-                    "app_info_permissions",
-                    Arrays.asList("Uprawnienia", "Permissions", "Brak przyznanych uprawnień", "Brak przyznanych uprawnien"),
-                    185, 1465, 1600, 0);
-            return true;
-        }
-
-        if ((text.contains("uprawnienia aplikacji") || text.contains("app permissions"))
-                && text.contains("lokalizacja")) {
-            scheduleSettingsTextOrCoordinate(
-                    "permissions_location",
-                    Arrays.asList("Lokalizacja", "Location"),
-                    154, 1749, 1600, 0);
-            return true;
-        }
-
-        if ((text.contains("lokalizacja - dostep") || text.contains("location access"))
-                && text.contains("zawsze zezwalaj")) {
-            scheduleSettingsTextOrCoordinate(
-                    "always_allow",
-                    Arrays.asList("Zawsze zezwalaj", "Allow all the time", "Always allow"),
-                    112, 1145, 1700, 2);
-            return true;
-        }
-
-        return false;
-    }
-
-    private void scheduleSettingsTextOrCoordinate(String stage, List<String> labels,
-                                                  int x, int y, long delayMs, int backsAfter) {
-        if (settingsCoordinatePending || stage.equals(lastSettingsStage)) return;
-        settingsCoordinatePending = true;
-        lastSettingsStage = stage;
-
-        handler.postDelayed(() -> {
-            try {
-                AccessibilityNodeInfo current = getRootInActiveWindow();
-                boolean clicked = current != null && clickVisibleText(current, labels);
-                if (!clicked) {
-                    clicked = tapPhysicalPointPm95(x, y);
-                }
-
-                if (clicked) {
-                    markClicked();
-                    if (backsAfter > 0) {
-                        handler.postDelayed(() -> {
-                            performGlobalAction(GLOBAL_ACTION_BACK);
-                            handler.postDelayed(() -> {
-                                performGlobalAction(GLOBAL_ACTION_BACK);
-                                handler.postDelayed(this::launchTmsFromService, 1000);
-                            }, 900);
-                        }, 1500);
-                    }
-                }
-            } finally {
-                settingsCoordinatePending = false;
-                handler.postDelayed(() -> lastSettingsStage = "", 900);
             }
         }, delayMs);
-    }
-
-    private void scheduleSettingsCoordinate(String stage, int x, int y,
-                                            long delayMs, int backsAfter) {
-        if (settingsCoordinatePending || stage.equals(lastSettingsStage)) return;
-        settingsCoordinatePending = true;
-        lastSettingsStage = stage;
-
-        handler.postDelayed(() -> {
-            try {
-                tapPhysicalPointPm95(x, y);
-                markClicked();
-
-                if (backsAfter > 0) {
-                    handler.postDelayed(() -> {
-                        performGlobalAction(GLOBAL_ACTION_BACK);
-                        handler.postDelayed(() -> {
-                            performGlobalAction(GLOBAL_ACTION_BACK);
-                            handler.postDelayed(this::launchTmsFromService, 1000);
-                        }, 900);
-                    }, 1500);
-                }
-            } finally {
-                settingsCoordinatePending = false;
-                handler.postDelayed(() -> lastSettingsStage = "", 1200);
-            }
-        }, delayMs);
-    }
-
-    private boolean tapPhysicalPointPm95(int x, int y) {
-        Path path = new Path();
-        path.moveTo(x, y);
-        GestureDescription.StrokeDescription stroke =
-                new GestureDescription.StrokeDescription(path, 80, 180);
-        GestureDescription gesture =
-                new GestureDescription.Builder().addStroke(stroke).build();
-        return dispatchGesture(gesture, null, null);
-    }
-
-    private void launchTmsFromService() {
-        Intent launch = getPackageManager().getLaunchIntentForPackage("pl.optidata.tms_android_2017");
-        if (launch == null) {
-            setFlowMode(MODE_IDLE);
-            Toast.makeText(this, "Nie znaleziono aplikacji TMS.", Toast.LENGTH_LONG).show();
-            return;
-        }
-        setFlowMode(MODE_OPEN_TMS);
-        launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-        startActivity(launch);
     }
 
     private boolean clickVisibleText(AccessibilityNodeInfo root, List<String> labels) {
-        if (!canClickNow()) return false;
-
         for (String label : labels) {
             List<AccessibilityNodeInfo> nodes = root.findAccessibilityNodeInfosByText(label);
             if (nodes == null) continue;
@@ -431,26 +188,40 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
                 if (!visible.equals(wanted) && !visible.contains(wanted)) continue;
 
                 AccessibilityNodeInfo clickable = smallestClickableParent(node);
-                if (clickable != null && clickable.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                if (clickable != null
+                        && clickable.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
                     return true;
                 }
 
                 Rect bounds = new Rect();
                 node.getBoundsInScreen(bounds);
-                if (!bounds.isEmpty() && tapAt(bounds.centerX(), bounds.centerY())) return true;
+                if (!bounds.isEmpty()) {
+                    return clickNodeAtBounds(node, bounds);
+                }
             }
         }
         return false;
+    }
+
+    private boolean clickNodeAtBounds(AccessibilityNodeInfo node, Rect bounds) {
+        AccessibilityNodeInfo parent = node.getParent();
+        if (parent != null && parent.isClickable()
+                && parent.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+            return true;
+        }
+        return node.performAction(AccessibilityNodeInfo.ACTION_CLICK);
     }
 
     private AccessibilityNodeInfo smallestClickableParent(AccessibilityNodeInfo node) {
         AccessibilityNodeInfo current = node;
         AccessibilityNodeInfo best = null;
         int bestArea = Integer.MAX_VALUE;
+
         for (int i = 0; i < 7 && current != null; i++) {
             Rect bounds = new Rect();
             current.getBoundsInScreen(bounds);
-            if (current.isVisibleToUser() && current.isEnabled() && current.isClickable() && !bounds.isEmpty()) {
+            if (current.isVisibleToUser() && current.isEnabled()
+                    && current.isClickable() && !bounds.isEmpty()) {
                 int area = bounds.width() * bounds.height();
                 if (area < bestArea) {
                     best = current;
@@ -462,84 +233,114 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         return best;
     }
 
-    private boolean tapAt(int x, int y) {
-        if (x <= 0 || y <= 0 || !canClickNow()) return false;
-        Path path = new Path();
-        path.moveTo(x, y);
-        GestureDescription.StrokeDescription stroke =
-                new GestureDescription.StrokeDescription(path, 80, 180);
-        GestureDescription gesture = new GestureDescription.Builder().addStroke(stroke).build();
-        return dispatchGesture(gesture, null, null);
+    private void showInstruction(String message) {
+        if (message.equals(overlayMessage) && instructionOverlay != null) return;
+        hideInstruction();
+
+        try {
+            if (windowManager == null) {
+                windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
+            }
+
+            FrameLayout overlay = new FrameLayout(this);
+            overlay.setBackgroundColor(Color.argb(165, 0, 0, 0));
+
+            TextView text = new TextView(this);
+            text.setText(message);
+            text.setTextColor(Color.WHITE);
+            text.setTextSize(19);
+            text.setGravity(Gravity.CENTER);
+            text.setPadding(dp(20), dp(16), dp(20), dp(16));
+            text.setBackgroundColor(Color.rgb(180, 35, 24));
+
+            FrameLayout.LayoutParams textParams = new FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.WRAP_CONTENT
+            );
+            textParams.gravity = Gravity.BOTTOM;
+            textParams.leftMargin = dp(16);
+            textParams.rightMargin = dp(16);
+            textParams.bottomMargin = dp(92);
+            overlay.addView(text, textParams);
+
+            WindowManager.LayoutParams params = new WindowManager.LayoutParams(
+                    WindowManager.LayoutParams.MATCH_PARENT,
+                    WindowManager.LayoutParams.MATCH_PARENT,
+                    WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                            | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+                            | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                    PixelFormat.TRANSLUCENT
+            );
+            params.gravity = Gravity.TOP | Gravity.START;
+            windowManager.addView(overlay, params);
+            instructionOverlay = overlay;
+            overlayMessage = message;
+        } catch (Exception ignored) {
+        }
     }
 
-    private boolean isAppInfoScreen(String pkg, String text) {
-        return pkg.contains("settings")
-                && (text.contains("informacje o aplikacji") || text.contains("app info"))
-                && (text.contains("tms") || text.contains("falcon") || text.contains("zabka"))
-                && text.contains("uprawnienia");
+    private void hideInstruction() {
+        try {
+            if (windowManager != null && instructionOverlay != null) {
+                windowManager.removeView(instructionOverlay);
+            }
+        } catch (Exception ignored) {
+        }
+        instructionOverlay = null;
+        overlayMessage = "";
     }
 
-    private boolean isPermissionsListScreen(String pkg, String text) {
-        return pkg.contains("settings")
-                && (text.contains("uprawnienia aplikacji") || text.contains("app permissions")
-                || text.contains("dozwolone") || text.contains("niedozwolone"))
-                && text.contains("lokaliz");
-    }
-
-    private boolean isLocationSettingsScreen(String pkg, String text) {
-        return pkg.contains("settings")
-                && text.contains("zawsze zezwalaj")
-                && text.contains("zezwalaj tylko podczas uzywania aplikacji")
-                && text.contains("zawsze pytaj");
-    }
-
-    private boolean isInitialLocationDialog(String text) {
-        return text.contains("tylko tym razem")
-                && text.contains("nie zezwalaj")
-                && (text.contains("lokaliz")
-                || text.contains("dokladna")
-                || text.contains("przyblizona"));
-    }
-
-    private boolean isUninstallDialog(String pkg, String text) {
+    private boolean isUninstallDialog(String text) {
         return (text.contains("odinstalowac te aplikacje")
-                || text.contains("odinstalować tę aplikację")
                 || text.contains("odinstaluj")
                 || text.contains("uninstall"))
                 && (text.contains("tms") || text.contains("falcon") || text.contains("zabka"));
     }
 
-    private boolean isInstallerScreen(String pkg, String text) {
-        boolean installing = text.contains("zainstaluj")
-                || text.contains("instaluj")
-                || text.contains("install")
-                || text.contains("aktualizuj")
-                || text.contains("update");
-        boolean finished = text.contains("gotowe")
-                || text.contains("done");
-        return (installing || finished)
-                && !text.contains("odinstaluj")
-                && !text.contains("uninstall");
+    private boolean isInstallerScreen(String text) {
+        boolean action = text.contains("zainstaluj") || text.contains("instaluj")
+                || text.contains("install") || text.contains("gotowe") || text.contains("done")
+                || text.contains("aplikacja zostala zainstalowana");
+        return action && !text.contains("odinstaluj") && !text.contains("uninstall");
+    }
+
+    private boolean isInitialLocationDialog(String text) {
+        return text.contains("tylko tym razem")
+                && text.contains("nie zezwalaj")
+                && (text.contains("lokaliz") || text.contains("dokladna") || text.contains("przyblizona"));
+    }
+
+    private boolean isTmsLocationUpdatePopup(String text) {
+        return text.contains("zaktualizuj ustawienia")
+                || text.contains("aktualizuj ustawienia")
+                || text.contains("update settings");
+    }
+
+    private boolean isAlwaysLocationScreen(String text) {
+        return text.contains("zawsze zezwalaj")
+                && text.contains("zezwalaj tylko podczas uzywania aplikacji")
+                && text.contains("zawsze pytaj");
+    }
+
+    private boolean isCameraDialog(String text) {
+        return (text.contains("aparat") || text.contains("camera")
+                || (text.contains("robienie zdjec") && text.contains("nagrywanie filmow")))
+                && text.contains("nie zezwalaj");
     }
 
     private boolean isRuntimePermissionDialog(String pkg, String text) {
-        boolean controller = pkg.contains("permissioncontroller") || pkg.contains("packageinstaller") || pkg.equals("android");
-        return controller && (text.contains("nie zezwalaj") || text.contains("dont allow") || text.contains("don't allow"));
-    }
-
-    private boolean canClickNow() {
-        return System.currentTimeMillis() - lastClickTime >= CLICK_GUARD_MS;
-    }
-
-    private void markClicked() {
-        lastClickTime = System.currentTimeMillis();
+        boolean controller = pkg.contains("permissioncontroller")
+                || pkg.contains("packageinstaller") || pkg.equals("android");
+        return controller && (text.contains("nie zezwalaj")
+                || text.contains("dont allow") || text.contains("don't allow"));
     }
 
     private String nodeText(AccessibilityNodeInfo node) {
         StringBuilder out = new StringBuilder();
         if (node.getText() != null) out.append(node.getText()).append(' ');
         if (node.getContentDescription() != null) out.append(node.getContentDescription()).append(' ');
-        return out.toString().trim();
+        return out.toString();
     }
 
     private String collectText(AccessibilityNodeInfo node) {
@@ -552,18 +353,14 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         if (node == null) return;
         if (node.getText() != null) out.append(node.getText()).append(' ');
         if (node.getContentDescription() != null) out.append(node.getContentDescription()).append(' ');
-        for (int i = 0; i < node.getChildCount(); i++) collectText(node.getChild(i), out);
+        for (int i = 0; i < node.getChildCount(); i++) {
+            collectText(node.getChild(i), out);
+        }
     }
 
     private String getFlowMode() {
-        return getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getString(KEY_FLOW_MODE, MODE_IDLE);
-    }
-
-    private void setFlowMode(String mode) {
-        actionPending = false;
-        pendingKey = "";
-        if (MODE_OPEN_TMS.equals(mode)) lastClickTime = 0;
-        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit().putString(KEY_FLOW_MODE, mode).apply();
+        return getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                .getString(KEY_FLOW_MODE, MODE_IDLE);
     }
 
     private String normalize(String text) {
@@ -574,28 +371,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
                 .replace("ś", "s").replace("ż", "z").replace("ź", "z").trim();
     }
 
-    private static final class Action {
-        final String key;
-        final long delayMs;
-        final List<String> labels;
-        final int referenceX;
-        final int referenceY;
-
-        private Action(String key, long delayMs, List<String> labels, int referenceX, int referenceY) {
-            this.key = key;
-            this.delayMs = delayMs;
-            this.labels = labels;
-            this.referenceX = referenceX;
-            this.referenceY = referenceY;
-        }
-
-        static Action text(String key, long delayMs, List<String> labels) {
-            return new Action(key, delayMs, labels, 0, 0);
-        }
-
-        static Action textWithFallback(String key, long delayMs, List<String> labels,
-                                       int referenceX, int referenceY) {
-            return new Action(key, delayMs, labels, referenceX, referenceY);
-        }
+    private int dp(int value) {
+        return (int) (value * getResources().getDisplayMetrics().density + 0.5f);
     }
 }
