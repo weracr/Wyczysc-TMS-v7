@@ -85,9 +85,38 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
         String mode = getFlowMode();
         String pkg = root.getPackageName() == null ? "" : root.getPackageName().toString().toLowerCase();
         String text = normalize(collectText(root));
+
+        // PM95: wymuszone, pojedyncze etapy po treści ekranu.
+        if ((MODE_FULL_REPAIR.equals(mode) || MODE_INSTALL_TMS.equals(mode))
+                && text.contains("aplikacja zostala zainstalowana")
+                && text.contains("gotowe")) {
+            forceStageTap("installer_done", 650, 1180, 1300, 0);
+            return;
+        }
+
+        if (MODE_GRANT_TMS_PERMISSIONS.equals(mode)
+                && (text.contains("informacje o aplikacji") || text.contains("app info"))
+                && text.contains("uprawnienia")) {
+            forceStageTap("app_info_permissions", 185, 1465, 1400, 0);
+            return;
+        }
+
+        if (MODE_GRANT_TMS_PERMISSIONS.equals(mode)
+                && (text.contains("uprawnienia aplikacji") || text.contains("app permissions"))
+                && text.contains("lokalizacja")) {
+            forceStageTap("permissions_location", 154, 1749, 1400, 0);
+            return;
+        }
+
+        if (MODE_GRANT_TMS_PERMISSIONS.equals(mode)
+                && text.contains("zawsze zezwalaj")
+                && text.contains("zezwalaj tylko podczas uzywania aplikacji")) {
+            forceStageTap("always_allow", 112, 1145, 1500, 2);
+            return;
+        }
         if ((MODE_FULL_REPAIR.equals(mode) || MODE_UNINSTALL_TMS.equals(mode))
                 && (text.contains("odinstalowac te aplikacje") || text.contains("odinstaluj"))) {
-            scheduleSettingsCoordinate("uninstall_ok", 861, 1169, 1500, 0);
+            forceStageTap("uninstall_ok", 861, 1169, 1400, 0);
             return;
         }
 
@@ -102,6 +131,52 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
             return;
         }
         scheduleAction(action);
+    }
+
+    private boolean forcedStagePending = false;
+    private String forcedStageKey = "";
+
+    private void forceStageTap(String key, int x, int y, long delayMs, int backsAfter) {
+        if (forcedStagePending || key.equals(forcedStageKey)) return;
+        forcedStagePending = true;
+        forcedStageKey = key;
+
+        handler.postDelayed(() -> {
+            Path path = new Path();
+            path.moveTo(x, y);
+            GestureDescription.StrokeDescription stroke =
+                    new GestureDescription.StrokeDescription(path, 80, 220);
+            GestureDescription gesture =
+                    new GestureDescription.Builder().addStroke(stroke).build();
+
+            dispatchGesture(gesture, new GestureResultCallback() {
+                @Override
+                public void onCompleted(GestureDescription gestureDescription) {
+                    forcedStagePending = false;
+                    lastClickTime = System.currentTimeMillis();
+                    if (backsAfter > 0) {
+                        handler.postDelayed(() -> {
+                            performGlobalAction(GLOBAL_ACTION_BACK);
+                            handler.postDelayed(() -> {
+                                performGlobalAction(GLOBAL_ACTION_BACK);
+                                handler.postDelayed(thisService()::launchTmsFromService, 1000);
+                            }, 900);
+                        }, 1400);
+                    }
+                    handler.postDelayed(() -> forcedStageKey = "", 900);
+                }
+
+                @Override
+                public void onCancelled(GestureDescription gestureDescription) {
+                    forcedStagePending = false;
+                    handler.postDelayed(() -> forcedStageKey = "", 500);
+                }
+            }, null);
+        }, delayMs);
+    }
+
+    private PermissionClickerAccessibilityService thisService() {
+        return this;
     }
 
     private Action detectAction(String mode, String pkg, String text) {

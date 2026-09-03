@@ -108,7 +108,6 @@ public class MainActivity extends Activity {
     }
 
     private void buildDriverScreen() {
-        clearFlowMode();
 
         ScrollView scroll = new ScrollView(this);
         LinearLayout root = new LinearLayout(this);
@@ -166,7 +165,6 @@ public class MainActivity extends Activity {
     }
 
     private void buildAdminScreen() {
-        clearFlowMode();
 
         ScrollView scroll = new ScrollView(this);
         LinearLayout root = new LinearLayout(this);
@@ -616,10 +614,10 @@ public class MainActivity extends Activity {
     }
 
     private void grantTmsPermissionsAfterInstall() {
+        setFlowMode(MODE_GRANT_TMS_PERMISSIONS);
         Toast.makeText(this,
                 "TMS zainstalowany. Otwieram ustawienia uprawnień.",
                 Toast.LENGTH_LONG).show();
-        setFlowMode(MODE_GRANT_TMS_PERMISSIONS);
         handler.postDelayed(() -> {
             setFlowMode(MODE_GRANT_TMS_PERMISSIONS);
             openTmsSettings();
