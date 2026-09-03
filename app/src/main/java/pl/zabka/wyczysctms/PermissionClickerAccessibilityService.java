@@ -4,6 +4,8 @@ import android.accessibilityservice.AccessibilityService;
 import android.graphics.Color;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
+import android.widget.LinearLayout;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.Gravity;
@@ -43,6 +45,8 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
     private WindowManager windowManager;
     private View instructionOverlay;
     private String overlayMessage = "";
+    private View automationDimOverlay;
+    private TextView automationStatusText;
 
     private final List<String> installerButtons = Arrays.asList(
             "Gotowe", "Done", "Zainstaluj", "Instaluj", "Aktualizuj", "Zaktualizuj",
@@ -94,6 +98,10 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
                 ? "" : root.getPackageName().toString().toLowerCase();
         String text = normalize(collectText(root));
 
+        if (isAutomationMode(mode) && !isInitialLocationDialog(text) && !isAlwaysLocationScreen(text)) {
+            showAutomationOverlay("Naprawa TMS w toku", "Prosimy nie dotykać ekranu. Aplikacja wykona kolejne kroki automatycznie.");
+        }
+
         if ((MODE_FULL_REPAIR.equals(mode) || MODE_UNINSTALL_TMS.equals(mode))
                 && isUninstallDialog(text)) {
             hideInstruction();
@@ -115,7 +123,8 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
 
         // Lokalizacja jest jedynym ręcznym krokiem.
         if (isInitialLocationDialog(text)) {
-            showInstruction("Nadaj uprawnienie do lokalizacji\n\nWybierz: PODCZAS UŻYWANIA APLIKACJI");
+            hideAutomationOverlay();
+            showInstruction(root, "Nadaj uprawnienie do lokalizacji\n\nWybierz: PODCZAS UŻYWANIA APLIKACJI", true);
             return;
         }
 
@@ -132,6 +141,7 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
 
         // Końcowa lokalizacja także ręcznie, ponieważ to ustawienie systemowe.
         if (isAlwaysLocationScreen(text)) {
+            hideAutomationOverlay();
             hideInstruction();
             clickAlwaysAllowAndReturn(root);
             return;
@@ -206,12 +216,27 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
     }
 
     private boolean clickNodeAtBounds(AccessibilityNodeInfo node, Rect bounds) {
-        AccessibilityNodeInfo parent = node.getParent();
-        if (parent != null && parent.isClickable()
-                && parent.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
-            return true;
+        AccessibilityNodeInfo current = node;
+        for (int i = 0; i < 6 && current != null; i++) {
+            if (current.isVisibleToUser() && current.isEnabled() && current.isClickable()
+                    && current.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                return true;
+            }
+            current = current.getParent();
         }
-        return node.performAction(AccessibilityNodeInfo.ACTION_CLICK);
+        return tapAt(bounds.centerX(), bounds.centerY());
+    }
+
+
+    private boolean tapAt(int x, int y) {
+        if (x <= 0 || y <= 0) return false;
+        android.graphics.Path path = new android.graphics.Path();
+        path.moveTo(x, y);
+        android.accessibilityservice.GestureDescription.StrokeDescription stroke =
+                new android.accessibilityservice.GestureDescription.StrokeDescription(path, 80, 200);
+        android.accessibilityservice.GestureDescription gesture =
+                new android.accessibilityservice.GestureDescription.Builder().addStroke(stroke).build();
+        return dispatchGesture(gesture, null, null);
     }
 
     private AccessibilityNodeInfo smallestClickableParent(AccessibilityNodeInfo node) {
@@ -366,6 +391,89 @@ public class PermissionClickerAccessibilityService extends AccessibilityService 
                         .addStroke(stroke)
                         .build();
         return dispatchGesture(gesture, null, null);
+    }
+
+    private boolean isAutomationMode(String mode) {
+        return MODE_FULL_REPAIR.equals(mode)
+                || MODE_UNINSTALL_TMS.equals(mode)
+                || MODE_INSTALL_TMS.equals(mode)
+                || MODE_OPEN_TMS.equals(mode)
+                || MODE_GRANT_TMS_PERMISSIONS.equals(mode);
+    }
+
+    private void showAutomationOverlay(String title, String subtitle) {
+        if (automationDimOverlay != null) return;
+        try {
+            if (windowManager == null) {
+                windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
+            }
+
+            FrameLayout root = new FrameLayout(this);
+            root.setBackgroundColor(Color.argb(242, 5, 9, 18));
+
+            LinearLayout card = new LinearLayout(this);
+            card.setOrientation(LinearLayout.VERTICAL);
+            card.setGravity(Gravity.CENTER);
+            card.setPadding(dp(24), dp(24), dp(24), dp(24));
+
+            GradientDrawable cardBg = new GradientDrawable();
+            cardBg.setColor(Color.rgb(16, 24, 40));
+            cardBg.setCornerRadius(dp(22));
+            cardBg.setStroke(dp(1), Color.rgb(52, 64, 84));
+            card.setBackground(cardBg);
+
+            TextView icon = new TextView(this);
+            icon.setText("✓");
+            icon.setTextSize(30);
+            icon.setTextColor(Color.rgb(52, 211, 153));
+            icon.setGravity(Gravity.CENTER);
+            card.addView(icon, new LinearLayout.LayoutParams(-1, dp(52)));
+
+            TextView titleView = new TextView(this);
+            titleView.setText(title);
+            titleView.setTextSize(22);
+            titleView.setTextColor(Color.WHITE);
+            titleView.setGravity(Gravity.CENTER);
+            card.addView(titleView, new LinearLayout.LayoutParams(-1, -2));
+
+            TextView subtitleView = new TextView(this);
+            subtitleView.setText(subtitle);
+            subtitleView.setTextSize(15);
+            subtitleView.setTextColor(Color.rgb(208, 213, 221));
+            subtitleView.setGravity(Gravity.CENTER);
+            subtitleView.setPadding(0, dp(10), 0, 0);
+            card.addView(subtitleView, new LinearLayout.LayoutParams(-1, -2));
+            automationStatusText = subtitleView;
+
+            FrameLayout.LayoutParams cardParams = new FrameLayout.LayoutParams(-1, -2);
+            cardParams.gravity = Gravity.CENTER;
+            cardParams.leftMargin = dp(22);
+            cardParams.rightMargin = dp(22);
+            root.addView(card, cardParams);
+
+            WindowManager.LayoutParams params = new WindowManager.LayoutParams(
+                    -1, -1,
+                    WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                            | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+                            | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                    PixelFormat.TRANSLUCENT);
+            params.gravity = Gravity.TOP | Gravity.START;
+            windowManager.addView(root, params);
+            automationDimOverlay = root;
+        } catch (Exception ignored) {
+        }
+    }
+
+    private void hideAutomationOverlay() {
+        try {
+            if (windowManager != null && automationDimOverlay != null) {
+                windowManager.removeView(automationDimOverlay);
+            }
+        } catch (Exception ignored) {
+        }
+        automationDimOverlay = null;
+        automationStatusText = null;
     }
 
     private boolean isUninstallDialog(String text) {

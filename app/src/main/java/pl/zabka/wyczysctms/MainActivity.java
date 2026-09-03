@@ -2,6 +2,7 @@ package pl.zabka.wyczysctms;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.ActivityManager;
 import android.app.AlertDialog;
 import android.app.admin.DevicePolicyManager;
 import android.content.ComponentName;
@@ -470,6 +471,7 @@ public class MainActivity extends Activity {
     }
 
     private void repairTms() {
+        closeTmsBeforeRepair();
         clearFlowMode();
         setFlowMode(MODE_FULL_REPAIR);
         grantPermissionsAfterInstall = true;
@@ -498,6 +500,21 @@ public class MainActivity extends Activity {
             Toast.makeText(this, "TMS nie jest zainstalowany. Uruchamiam instalację.", Toast.LENGTH_LONG).show();
             installNewestTmsFromDownload();
         }
+    }
+
+
+    private void closeTmsBeforeRepair() {
+        try {
+            ActivityManager activityManager =
+                    (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
+            if (activityManager != null) {
+                activityManager.killBackgroundProcesses(detectedTmsPackage);
+            }
+        } catch (Exception ignored) {
+        }
+        Toast.makeText(this,
+                "Przed naprawą aplikacja TMS powinna być zamknięta. Rozpoczynam bezpieczną naprawę.",
+                Toast.LENGTH_LONG).show();
     }
 
     private void uninstallTms() {
