@@ -614,14 +614,10 @@ public class MainActivity extends Activity {
     }
 
     private void grantTmsPermissionsAfterInstall() {
-        setFlowMode(MODE_GRANT_TMS_PERMISSIONS);
         Toast.makeText(this,
-                "TMS zainstalowany. Otwieram ustawienia uprawnień.",
+                "Uruchamiam TMS i nadaję pozostałe zgody.",
                 Toast.LENGTH_LONG).show();
-        handler.postDelayed(() -> {
-            setFlowMode(MODE_GRANT_TMS_PERMISSIONS);
-            openTmsSettings();
-        }, 1400);
+        launchTmsForRuntimePermissions();
     }
 
 
